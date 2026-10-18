@@ -97,7 +97,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -142,7 +141,6 @@ import coil3.size.Dimension
 import coil3.size.Precision
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DeviceFolderTarget
@@ -1247,9 +1245,8 @@ private fun DevicePhotoViewer(
         mutableIntStateOf(startIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
     }
     // Autoplay: plays the feed one item after another — videos to their end, stills and
-    // animations on a timer — and scrolls along with them.
+    // animations on a timer — centring each item as it goes.
     var autoPlay by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
     // Delete / info UI state.
     var pendingDelete by remember { mutableStateOf<DevicePhotoRow?>(null) }
     var infoPhoto by remember { mutableStateOf<DevicePhotoRow?>(null) }
@@ -1270,7 +1267,21 @@ private fun DevicePhotoViewer(
         pendingDelete = photo
     }
 
-    /** Autoplay step: hand playback to the next item and bring it into view. */
+    /**
+     * Autoplay's presentation position: the item being played sits in the middle of the screen, so
+     * each one arrives centred instead of sliding in from the top edge. Two steps, because an
+     * item's real height is only known once it has been measured.
+     */
+    suspend fun centrePlayingItem(index: Int) {
+        listState.animateScrollToItem(index)
+        val viewport = listState.layoutInfo.viewportSize.height
+        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+        if (viewport <= 0 || item.size <= 0) return
+        val top = (viewport - item.size) / 2
+        if (item.offset != top) listState.animateScrollToItem(index, -top)
+    }
+
+    /** Autoplay step: hand playback to the next item (the feed then centres it). */
     fun advanceAutoPlay() {
         if (!autoPlay) return
         val next = playingIndex + 1
@@ -1280,7 +1291,6 @@ private fun DevicePhotoViewer(
             return
         }
         playingIndex = next
-        scope.launch { listState.animateScrollToItem(next) }
     }
 
     /** Tap on one item: play it, or pause it — pausing also stops an autoplay run. */
@@ -1359,6 +1369,11 @@ private fun DevicePhotoViewer(
         delay(waitMs)
         // Still on the same item after the wait: nothing ended on its own, so move on.
         if (playingIndex == startedAt) advanceAutoPlay()
+    }
+    // Autoplay keeps whatever it is playing in the middle of the screen. Separate from the pacing
+    // above so the wait starts with the scroll, not after it.
+    LaunchedEffect(autoPlay, playingIndex) {
+        if (autoPlay && playingIndex >= 0) centrePlayingItem(playingIndex)
     }
     // Immersive mode: hiding the UI also hides status + navigation bars,
     // so the whole display shows only images. Restored on dismiss.
@@ -1663,62 +1678,55 @@ private fun DevicePhotoViewer(
                         .padding(end = 6.dp)
                 )
             }
-            // Bottom centre: the current item's name plus the autoplay control. Both fade with the
-            // chrome — except that the autoplay control stays while a run is in progress, so it
-            // can always be stopped.
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // The current item's name, bottom centre; it fades with the chrome.
+            AnimatedVisibility(
+                visible = uiVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
             ) {
-                AnimatedVisibility(
-                    visible = uiVisible,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    photos.getOrNull(currentIndex)?.let { current ->
-                        Text(
-                            text = current.name,
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                shadow = Shadow(
-                                    color = Color.Black.copy(alpha = 0.8f),
-                                    offset = Offset(1f, 1f),
-                                    blurRadius = 3f
-                                )
-                            ),
-                            modifier = Modifier.padding(horizontal = 48.dp)
-                        )
-                    }
+                photos.getOrNull(currentIndex)?.let { current ->
+                    Text(
+                        text = current.name,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.8f),
+                                offset = Offset(1f, 1f),
+                                blurRadius = 3f
+                            )
+                        ),
+                        modifier = Modifier.padding(horizontal = 56.dp, vertical = 12.dp)
+                    )
                 }
-                if (uiVisible || autoPlay) {
-                    Row(
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(if (autoPlay) Violet500 else Color.Black.copy(alpha = 0.55f))
-                            .clickable { toggleAutoPlay() }
-                            .padding(horizontal = 14.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (autoPlay) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            tint = if (autoPlay) Color.Black else Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (autoPlay) "Autoplay on" else "Autoplay",
-                            color = if (autoPlay) Color.Black else Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+            }
+
+            // Autoplay, in the bottom corner: one icon, no label. It stays visible while a run is
+            // in progress so it can always be stopped, even with the rest of the chrome hidden.
+            AnimatedVisibility(
+                visible = uiVisible || autoPlay,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 8.dp, bottom = 12.dp)
+            ) {
+                IconButton(
+                    onClick = { toggleAutoPlay() },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(if (autoPlay) Violet500 else Color.Black.copy(alpha = 0.5f))
+                ) {
+                    Icon(
+                        imageVector = if (autoPlay) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (autoPlay) "Stop autoplay" else "Autoplay",
+                        tint = if (autoPlay) Color.Black else Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
             }
         }
