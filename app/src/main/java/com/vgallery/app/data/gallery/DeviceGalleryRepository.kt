@@ -25,7 +25,8 @@ sealed interface DeleteResult {
     data object Deleted : DeleteResult
     /**
      * System consent dialog required (Android 10+): launch the sender, then call
-     * [DeviceGalleryRepository.deleteMedia] again with [pending] on OK.
+     * [DeviceGalleryRepository.deleteMedia] again with [pending] on OK. [pending] holds the
+     * primary-volume URIs that still need deleting (not the synthetic `external` ones).
      */
     data class NeedsConsent(val intentSender: android.content.IntentSender, val pending: List<Uri>) : DeleteResult
     data class Failed(val message: String) : DeleteResult
@@ -34,16 +35,15 @@ sealed interface DeleteResult {
 /**
  * MediaStore permissions for the auto device gallery (no manual folder pick needed).
  *
- * API 33+ uses the granular READ_MEDIA_* permissions. Below that, READ_EXTERNAL_STORAGE
- * covers scanning, and WRITE_EXTERNAL_STORAGE is also requested because a direct (pre-consent)
- * delete on Android 10 needs it — without it, deleting throws a plain SecurityException
- * that used to surface as "Permission denied".
+ * API 33+ uses the granular READ_MEDIA_* permissions. On Android 10 (API 29) WRITE_EXTERNAL_STORAGE
+ * is what makes MediaStore offer its per-file delete consent dialog instead of a bare
+ * SecurityException — declaring it only up to API 29 keeps the runtime request in sync with the
+ * manifest, because asking for an undeclared permission fails the whole request.
  */
 fun deviceGalleryPermissions(): Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
     } else {
-        // API 29-32 and pre-Q: read via READ_EXTERNAL_STORAGE; write (delete forever) needs WRITE on 29.
         arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -54,6 +54,33 @@ fun hasDeviceGalleryPermission(context: Context): Boolean =
     deviceGalleryPermissions().all {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
+
+/** MediaStore's provider authority ("content://media/..."). */
+private const val MEDIA_AUTHORITY = "media"
+
+/**
+ * Rewrites a synthetic-volume MediaStore URI (`content://media/external/…`) to the real primary
+ * volume (`content://media/external_primary/…`), keeping the item id and collection.
+ *
+ * The synthetic `external` volume is readable but not writable, and MediaStore's batch delete
+ * request rejects it outright — so a permanent delete (and the consent dialog that follows it)
+ * has to address `external_primary`. Anything already on a real volume is returned untouched.
+ */
+internal fun mediaStorePrimaryUri(uri: Uri): Uri {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return uri
+    if (uri.authority != MEDIA_AUTHORITY) return uri
+    val segments = uri.pathSegments
+    if (segments.size != 4 || segments[0] != MediaStore.VOLUME_EXTERNAL || segments[2] != "media") return uri
+    val id = segments[3].toLongOrNull() ?: return uri
+    val collection = when (segments[1]) {
+        "images" -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        "video" -> MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        "audio" -> MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        "files" -> MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        else -> return uri
+    }
+    return ContentUris.withAppendedId(collection, id)
+}
 
 @Singleton
 class DeviceGalleryRepository @Inject constructor(
@@ -241,55 +268,81 @@ class DeviceGalleryRepository @Inject constructor(
     fun cachedSnapshot(): List<DevicePhotoRow> = cachedPhotos.orEmpty()
 
     /**
-     * Deletes items from the device. Tries direct deletes first; leftovers go
-     * through one system consent dialog on Android 10+ ([DeleteResult.NeedsConsent]
-     * carries the still-pending URIs for the retry after OK).
-     * The cache is dropped on success so the next load rescans.
+     * Permanently deletes [uris] from the device.
+     *
+     * Files the app owns (and everything on Android 9 and below) go away straight away. Other apps'
+     * media needs the user's approval: Android 10 asks per file through [RecoverableSecurityException],
+     * Android 11+ asks once for the whole batch through `createDeleteRequest` (the system performs
+     * that deletion itself). [DeleteResult.NeedsConsent] carries the still-pending URIs to retry with.
+     *
+     * The outcome is verified before reporting success, so [DeleteResult.Deleted] really means the
+     * rows are gone; anything still listed comes back as [DeleteResult.Failed]. The cache is dropped
+     * on success so the next load rescans.
      */
     suspend fun deleteMedia(uris: List<Uri>): DeleteResult = withContext(Dispatchers.IO) {
         if (uris.isEmpty()) return@withContext DeleteResult.Deleted
-        try {
-            val survivors = mutableListOf<Uri>()
-            for (uri in uris) {
-                try {
-                    context.contentResolver.delete(uri, null, null)
-                } catch (e: RecoverableSecurityException) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        // Batch below: one consent dialog for all leftovers.
-                        survivors += uri
-                    } else {
-                        return@withContext DeleteResult.NeedsConsent(
-                            e.userAction.actionIntent.intentSender,
-                            uris
-                        )
-                    }
-                } catch (_: SecurityException) {
-                    return@withContext DeleteResult.Failed("Permission denied")
-                } catch (e: Exception) {
-                    return@withContext DeleteResult.Failed(e.message ?: "Delete failed")
+        // Address the writable primary volume, never the read-only synthetic `external` one.
+        val targets = uris.map { mediaStorePrimaryUri(it) }
+        val blocked = mutableListOf<Uri>()
+        var message: String? = null
+
+        for (uri in targets) {
+            try {
+                context.contentResolver.delete(uri, null, null)
+            } catch (e: RecoverableSecurityException) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                    // Android 10 grants write access one file at a time; keep the rest queued.
+                    return@withContext DeleteResult.NeedsConsent(
+                        e.userAction.actionIntent.intentSender,
+                        targets
+                    )
                 }
+                blocked += uri
+            } catch (e: SecurityException) {
+                blocked += uri
+                if (message == null) message = e.message ?: "Permission denied"
+            } catch (e: Exception) {
+                blocked += uri
+                if (message == null) message = e.message ?: "Delete failed"
             }
-            if (survivors.isEmpty()) {
-                cachedPhotos = null
-                return@withContext DeleteResult.Deleted
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                return@withContext try {
-                    val pending = MediaStore.createDeleteRequest(context.contentResolver, survivors)
-                    DeleteResult.NeedsConsent(pending.intentSender, survivors)
-                } catch (e: Exception) {
-                    DeleteResult.Failed(e.message ?: "Delete failed")
-                }
-            }
-            // Below Android 11 every survivor already reported its own consent above.
-            DeleteResult.Failed("Delete failed")
-        } catch (e: Exception) {
-            DeleteResult.Failed(e.message ?: "Delete failed")
         }
+
+        if (blocked.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // One system dialog for the whole batch; on approval the system deletes the files.
+            return@withContext try {
+                val pending = MediaStore.createDeleteRequest(context.contentResolver, blocked)
+                DeleteResult.NeedsConsent(pending.intentSender, blocked)
+            } catch (e: Exception) {
+                DeleteResult.Failed(message ?: e.message ?: "Delete failed")
+            }
+        }
+
+        val left = targets.filter { mediaExists(it) }
+        if (left.isNotEmpty()) {
+            return@withContext DeleteResult.Failed(
+                message ?: "Couldn't delete ${left.size} item(s)"
+            )
+        }
+        cachedPhotos = null
+        DeleteResult.Deleted
     }
 
     /** Single-item convenience for [deleteMedia]. */
     suspend fun deleteMedia(uri: Uri): DeleteResult = deleteMedia(listOf(uri))
+
+    /** The URIs from [uris] MediaStore no longer lists: used to prune the Trash after a delete round. */
+    suspend fun goneUris(uris: List<Uri>): List<Uri> = withContext(Dispatchers.IO) {
+        uris.filterNot { mediaExists(mediaStorePrimaryUri(it)) }
+    }
+
+    /** True while MediaStore still lists [uri]; an unreadable URI counts as gone. */
+    private fun mediaExists(uri: Uri): Boolean = try {
+        context.contentResolver
+            .query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+            ?.use { it.moveToFirst() } ?: false
+    } catch (_: Exception) {
+        false
+    }
 
     // ── Trash ─────────────────────────────────────────────────────────────────────────
 

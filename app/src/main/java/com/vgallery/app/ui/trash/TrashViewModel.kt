@@ -54,17 +54,27 @@ class TrashViewModel @Inject constructor(
         }
     }
 
-    /** Permanently deletes items from Trash (consent dialogs on Android 10+). */
+    /**
+     * Permanently deletes items from Trash.
+     *
+     * Android 10+ needs the user's approval, which surfaces through [consentRequests] and is
+     * answered with [answerConsent]; Android 11+ deletes the whole approved batch at once, while
+     * Android 10 asks per file. Whatever happens, only entries that are really gone leave the
+     * Trash, so a partial failure never leaves dead rows behind.
+     */
     fun deleteForever(uris: List<Uri>, onDone: (Boolean, String) -> Unit) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            var remaining = uris
-            repeat(uris.size + 2) {
-                when (val result = repository.deleteMedia(remaining)) {
+            val originals = uris
+            val successLabel = if (originals.size > 1) "Deleted ${originals.size} items" else "Deleted"
+            var pending = originals
+            var attempts = 0
+            while (attempts < originals.size + 2 && pending.isNotEmpty()) {
+                attempts++
+                when (val result = repository.deleteMedia(pending)) {
                     is DeleteResult.Deleted -> {
-                        repository.removeTrashedMedia(remaining.map { it.toString() })
-                        val label = if (uris.size > 1) "Deleted ${uris.size} items" else "Deleted"
-                        onDone(true, label)
+                        repository.removeTrashedMedia(originals.map { it.toString() })
+                        onDone(true, successLabel)
                         return@launch
                     }
                     is DeleteResult.NeedsConsent -> {
@@ -72,13 +82,20 @@ class TrashViewModel @Inject constructor(
                         consentGate = gate
                         _consentRequests.emit(result.intentSender)
                         if (!gate.await()) {
+                            // Earlier rounds may already have deleted some files: prune those.
+                            val gone = repository.goneUris(originals)
+                            if (gone.isNotEmpty()) repository.removeTrashedMedia(gone.map { it.toString() })
                             onDone(false, "Delete cancelled")
                             return@launch
                         }
-                        remaining = result.pending
+                        pending = result.pending
                     }
                     is DeleteResult.Failed -> {
-                        onDone(false, result.message)
+                        // Some items may have gone through before the failure: prune those.
+                        val gone = repository.goneUris(originals)
+                        if (gone.isNotEmpty()) repository.removeTrashedMedia(gone.map { it.toString() })
+                        if (gone.size == originals.size) onDone(true, successLabel)
+                        else onDone(false, result.message)
                         return@launch
                     }
                 }
