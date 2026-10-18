@@ -1,18 +1,48 @@
 package com.vgallery.app.ui.settings
 
-import androidx.compose.animation.*
-import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,21 +51,33 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.vgallery.app.data.preferences.AspectRatioMode
-import com.vgallery.app.data.preferences.SortOrder
-import com.vgallery.app.ui.theme.*
+import com.vgallery.app.BuildConfig
+import com.vgallery.app.ui.theme.Black
+import com.vgallery.app.ui.theme.SurfaceElevated
+import com.vgallery.app.ui.theme.SurfaceVariant
+import com.vgallery.app.ui.theme.TextDisabled
+import com.vgallery.app.ui.theme.TextMuted
+import com.vgallery.app.ui.theme.TextPrimary
+import com.vgallery.app.ui.theme.TextSecondary
+import com.vgallery.app.ui.theme.Violet400
+import com.vgallery.app.ui.theme.Violet500
 
+/** Which About page Settings is currently showing. */
+private enum class AboutPage { APP, DEVELOPER }
+
+/**
+ * Settings, deliberately down to the one thing that is actually useful here: the app's own
+ * About pages. Every playback preference the app ships with is chosen for the common case, so
+ * there is nothing to tune — see [com.vgallery.app.data.preferences.AppPreferences] for the
+ * stored defaults that the rest of the app still reads.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    onBack: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel()
-) {
-    val settings by viewModel.settings.collectAsState()
-    var showSortDialog by remember { mutableStateOf(false) }
-    var showDelayDialog by remember { mutableStateOf(false) }
-    var showAspectRatioDialog by remember { mutableStateOf(false) }
+fun SettingsScreen(onBack: () -> Unit) {
+    var page by remember { mutableStateOf<AboutPage?>(null) }
+
+    // Back inside an About page returns to Settings instead of leaving it.
+    BackHandler(enabled = page != null) { page = null }
 
     Scaffold(
         containerColor = Black,
@@ -43,23 +85,25 @@ fun SettingsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Settings",
+                        text = when (page) {
+                            null -> "Settings"
+                            AboutPage.APP -> "About"
+                            AboutPage.DEVELOPER -> "About Developer"
+                        },
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (page == null) onBack() else page = null }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = if (page == null) "Back" else "Back to settings",
                             tint = TextPrimary
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
     ) { padding ->
@@ -70,148 +114,14 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            // Playback Section
-            SettingsSectionHeader("Playback")
-
-            SettingsCard {
-                SettingsToggleItem(
-                    icon = Icons.Filled.StayCurrentLandscape,
-                    title = "Landscape Video Mode",
-                    subtitle = "Open videos in dedicated landscape player (videos only)",
-                    checked = settings.landscapeVideoMode,
-                    onCheckedChange = { viewModel.setLandscapeVideoMode(it) }
-                )
-
-                HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
-
-                SettingsToggleItem(
-                    icon = Icons.Filled.Loop,
-                    title = "Loop Videos",
-                    subtitle = "Repeat videos continuously",
-                    checked = settings.loopVideos,
-                    onCheckedChange = { viewModel.setLoopVideos(it) }
-                )
-
-                HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
-
-                SettingsClickItem(
-                    icon = Icons.Filled.AspectRatio,
-                    title = "Display Aspect Ratio",
-                    subtitle = formatAspectRatioMode(settings.aspectRatioMode),
-                    onClick = { showAspectRatioDialog = true }
-                )
-
-                HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
-
-                SettingsToggleItem(
-                    icon = Icons.Filled.Shuffle,
-                    title = "Shuffle Media",
-                    subtitle = "Randomize playback order",
-                    checked = settings.shuffleMedia,
-                    onCheckedChange = { viewModel.setShuffleMedia(it) }
-                )
-
-                HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
-
-                SettingsClickItem(
-                    icon = Icons.AutoMirrored.Filled.Sort,
-                    title = "Sort Order",
-                    subtitle = formatSortOrder(settings.sortOrder),
-                    onClick = { showSortDialog = true }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Images Section
-            SettingsSectionHeader("Images")
-
-            SettingsCard {
-                SettingsToggleItem(
-                    icon = Icons.Filled.Timer,
-                    title = "Auto-Advance Images",
-                    subtitle = "Automatically swipe to next image",
-                    checked = settings.autoAdvanceImages,
-                    onCheckedChange = { viewModel.setAutoAdvanceImages(it) }
-                )
-
-                AnimatedVisibility(visible = settings.autoAdvanceImages) {
-                    Column {
-                        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
-
-                        SettingsClickItem(
-                            icon = Icons.Filled.Timelapse,
-                            title = "Auto-Advance Delay",
-                            subtitle = "${settings.autoAdvanceDelaySeconds} seconds",
-                            onClick = { showDelayDialog = true }
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Display Section
-            SettingsSectionHeader("Display")
-
-            SettingsCard {
-                SettingsToggleItem(
-                    icon = Icons.Filled.TextFields,
-                    title = "Show File Name",
-                    subtitle = "Display file name on media",
-                    checked = settings.showFileName,
-                    onCheckedChange = { viewModel.setShowFileName(it) }
-                )
-
-                HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
-
-                SettingsToggleItem(
-                    icon = Icons.Filled.Vibration,
-                    title = "Haptic Feedback",
-                    subtitle = "Vibrate on page swipe",
-                    checked = settings.hapticFeedback,
-                    onCheckedChange = { viewModel.setHapticFeedback(it) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // About Section (no update checks: the app is fully offline)
-            SettingsSectionHeader("About")
-
-            SettingsCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PhotoLibrary,
-                        contentDescription = null,
-                        tint = Violet400,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "VGallery",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TextPrimary
-                        )
-                        val version = com.vgallery.app.BuildConfig.VERSION_NAME
-                        Text(
-                            text = "Installed: v$version • Reels-style photo scrolling, 100% offline",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextMuted
-                        )
-                    }
-                }
+            when (page) {
+                null -> SettingsMenu(onOpen = { page = it })
+                AboutPage.APP -> AboutAppPage()
+                AboutPage.DEVELOPER -> AboutDeveloperPage()
             }
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // App info
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
@@ -224,7 +134,7 @@ fun SettingsScreen(
                         fontSize = 16.sp
                     )
                     Text(
-                        text = "v${com.vgallery.app.BuildConfig.VERSION_NAME}",
+                        text = "v${BuildConfig.VERSION_NAME}",
                         color = TextDisabled,
                         fontSize = 12.sp
                     )
@@ -234,41 +144,211 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
 
-    // Sort order dialog
-    if (showSortDialog) {
-        SortOrderDialog(
-            currentOrder = settings.sortOrder,
-            onOrderSelected = {
-                viewModel.setSortOrder(it)
-                showSortDialog = false
-            },
-            onDismiss = { showSortDialog = false }
+@Composable
+private fun SettingsMenu(onOpen: (AboutPage) -> Unit) {
+    SettingsSectionHeader("About")
+
+    SettingsCard {
+        SettingsClickItem(
+            icon = Icons.Filled.PhotoLibrary,
+            title = "About VGallery",
+            subtitle = "Version, features and privacy",
+            onClick = { onOpen(AboutPage.APP) }
+        )
+
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+
+        SettingsClickItem(
+            icon = Icons.Filled.Person,
+            title = "About Developer",
+            subtitle = "Who makes VGallery",
+            onClick = { onOpen(AboutPage.DEVELOPER) }
+        )
+    }
+}
+
+@Composable
+private fun AboutAppPage() {
+    SettingsCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.PhotoLibrary,
+                contentDescription = null,
+                tint = Violet400,
+                modifier = Modifier.size(30.dp)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "VGallery",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Version ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+            }
+        }
+    }
+
+    SettingsSectionHeader("What's inside")
+
+    SettingsCard {
+        AboutBullet(
+            icon = Icons.Filled.Folder,
+            title = "Folder-wise gallery",
+            body = "Every album on the device, newest folders first, with item count and folder size. " +
+                "Photos and Videos tabs keep each kind one tap away, and every folder opens as a grid or a list."
+        )
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        AboutBullet(
+            icon = Icons.Filled.PlayArrow,
+            title = "Continuous viewer",
+            body = "Scroll every photo and video in one feed, pinch to zoom 1x-10x, and tap Autoplay " +
+                "to play the whole feed one item after another."
+        )
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        AboutBullet(
+            icon = Icons.Filled.PhotoLibrary,
+            title = "Trash and move",
+            body = "Deleting goes to a Google Photos style Trash first, restorable for 30 days. " +
+                "Items can also be moved to another folder without leaving the app."
         )
     }
 
-    // Delay dialog
-    if (showDelayDialog) {
-        DelayDialog(
-            currentDelay = settings.autoAdvanceDelaySeconds,
-            onDelaySelected = {
-                viewModel.setAutoAdvanceDelay(it)
-                showDelayDialog = false
-            },
-            onDismiss = { showDelayDialog = false }
+    SettingsSectionHeader("Privacy")
+
+    SettingsCard {
+        AboutBullet(
+            icon = Icons.Filled.WifiOff,
+            title = "Works fully offline",
+            body = "VGallery has no internet permission at all, so nothing can be uploaded. " +
+                "There is no account, no ad and no tracker."
+        )
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        AboutBullet(
+            icon = Icons.Filled.Lock,
+            title = "Your photos stay yours",
+            body = "The app only reads the media on this device through Android's MediaStore. " +
+                "Albums, Trash and settings are stored locally, and uninstalling removes them."
+        )
+    }
+}
+
+@Composable
+private fun AboutDeveloperPage() {
+    SettingsCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Person,
+                contentDescription = null,
+                tint = Violet400,
+                modifier = Modifier.size(30.dp)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "realmjunaid",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Android developer \u2022 VGallery",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
+            }
+        }
+    }
+
+    SettingsSectionHeader("About the developer")
+
+    SettingsCard {
+        Text(
+            text = "VGallery is made by one developer who wanted a gallery that simply shows " +
+                "your photos and videos. No account, no ads, no feed, no uploads \u2014 just the " +
+                "albums already on the device, opened fast.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            modifier = Modifier.padding(16.dp)
+        )
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        Text(
+            text = "Ideas and bug reports from real use shape what gets built next: folder-wise " +
+                "albums, the Trash, move-to-folder, the continuous viewer, pinch zoom and autoplay " +
+                "all came from that feedback. If something feels wrong, tell me and it gets fixed " +
+                "in the next build.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            modifier = Modifier.padding(16.dp)
         )
     }
 
-    // Aspect Ratio dialog
-    if (showAspectRatioDialog) {
-        AspectRatioDialog(
-            currentMode = settings.aspectRatioMode,
-            onModeSelected = {
-                viewModel.setAspectRatioMode(it)
-                showAspectRatioDialog = false
-            },
-            onDismiss = { showAspectRatioDialog = false }
+    SettingsSectionHeader("Project")
+
+    SettingsCard {
+        AboutBullet(
+            icon = Icons.Filled.Code,
+            title = "Source code",
+            body = "The whole app is open: github.com/realmjunaid/vgallery \u2022 " +
+                "gitlab.com/realmjunaid/vgallery"
         )
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        AboutBullet(
+            icon = Icons.Filled.Person,
+            title = "Contact",
+            body = "Follow or reach out through the same account: realmjunaid on GitHub and GitLab. " +
+                "Feature requests and bug reports are welcome there."
+        )
+    }
+}
+
+@Composable
+private fun AboutBullet(icon: ImageVector, title: String, body: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Violet400,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextPrimary,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
+        }
     }
 }
 
@@ -293,53 +373,6 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun SettingsToggleItem(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Violet400,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = TextPrimary
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = TextMuted
-            )
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.Black,
-                checkedTrackColor = Violet500,
-                uncheckedThumbColor = TextMuted,
-                uncheckedTrackColor = SurfaceElevated
-            )
-        )
-    }
-}
-
-@Composable
 private fun SettingsClickItem(
     icon: ImageVector,
     title: String,
@@ -349,6 +382,7 @@ private fun SettingsClickItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -379,185 +413,4 @@ private fun SettingsClickItem(
             modifier = Modifier.size(20.dp)
         )
     }
-}
-
-@Composable
-private fun SortOrderDialog(
-    currentOrder: SortOrder,
-    onOrderSelected: (SortOrder) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceVariant,
-        title = {
-            Text("Sort Order", color = TextPrimary)
-        },
-        text = {
-            Column {
-                SortOrder.entries.forEach { order ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onOrderSelected(order) }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = currentOrder == order,
-                            onClick = { onOrderSelected(order) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = Violet500,
-                                unselectedColor = TextMuted
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = formatSortOrder(order),
-                            color = if (currentOrder == order) TextPrimary else TextSecondary,
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Violet400)
-            }
-        }
-    )
-}
-
-@Composable
-private fun DelayDialog(
-    currentDelay: Int,
-    onDelaySelected: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val options = listOf(2, 3, 5, 8, 10, 15)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceVariant,
-        title = {
-            Text("Auto-Advance Delay", color = TextPrimary)
-        },
-        text = {
-            Column {
-                options.forEach { seconds ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onDelaySelected(seconds) }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = currentDelay == seconds,
-                            onClick = { onDelaySelected(seconds) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = Violet500,
-                                unselectedColor = TextMuted
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "$seconds seconds",
-                            color = if (currentDelay == seconds) TextPrimary else TextSecondary,
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Violet400)
-            }
-        }
-    )
-}
-
-private fun formatSortOrder(order: SortOrder): String = when (order) {
-    SortOrder.NAME_ASC -> "Name (A → Z)"
-    SortOrder.NAME_DESC -> "Name (Z → A)"
-    SortOrder.DATE_NEWEST -> "Date (Newest first)"
-    SortOrder.DATE_OLDEST -> "Date (Oldest first)"
-    SortOrder.SIZE_LARGEST -> "Size (Largest first)"
-    SortOrder.SIZE_SMALLEST -> "Size (Smallest first)"
-    SortOrder.TYPE_VIDEO_FIRST -> "Type (Videos first)"
-    SortOrder.TYPE_IMAGE_FIRST -> "Type (Images first)"
-}
-
-@Composable
-private fun AspectRatioDialog(
-    currentMode: AspectRatioMode,
-    onModeSelected: (AspectRatioMode) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val options = listOf(
-        AspectRatioMode.SMART to ("Smart Auto (Recommended)" to "Crop vertical reels, fit landscape with blurred background"),
-        AspectRatioMode.FILL to ("Always Fill Screen" to "Crop all videos to fill vertical screen"),
-        AspectRatioMode.FIT to ("Always Fit (Original Ratio)" to "Show complete video with black bars")
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceVariant,
-        title = {
-            Text("Display Aspect Ratio", color = TextPrimary)
-        },
-        text = {
-            Column {
-                options.forEach { (mode, desc) ->
-                    val (title, subtitle) = desc
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onModeSelected(mode) }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = currentMode == mode,
-                            onClick = { onModeSelected(mode) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = Violet500,
-                                unselectedColor = TextMuted
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = title,
-                                color = if (currentMode == mode) TextPrimary else TextSecondary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = subtitle,
-                                color = TextMuted,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Violet400)
-            }
-        }
-    )
-}
-
-private fun formatAspectRatioMode(mode: AspectRatioMode): String = when (mode) {
-    AspectRatioMode.SMART -> "Smart Auto (Recommended)"
-    AspectRatioMode.FILL -> "Always Fill (Reel Zoom)"
-    AspectRatioMode.FIT -> "Always Fit (Original Ratio)"
 }
