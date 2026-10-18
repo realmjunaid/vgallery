@@ -25,6 +25,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1174,6 +1176,40 @@ private fun FeedVideoItem(
                     )
                 }
         )
+        // While this is the item playing, its length counts down in the corner — time left, then
+        // the full length — so the duration can be read at any point instead of only before it
+        // starts or by waiting for the end.
+        if (isPlaying) {
+            var positionMs by remember { mutableLongStateOf(0L) }
+            var reportedMs by remember { mutableLongStateOf(0L) }
+            LaunchedEffect(exoPlayer, photo.id) {
+                while (true) {
+                    positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    val reported = exoPlayer.duration
+                    reportedMs = if (reported > 0L) reported else 0L
+                    delay(200)
+                }
+            }
+            val totalMs = if (reportedMs > 0L) reportedMs else photo.durationMs
+            if (totalMs > 0L) {
+                Text(
+                    text = "${formatGridDuration((totalMs - positionMs).coerceAtLeast(0L))} / " +
+                        formatGridDuration(totalMs),
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.8f),
+                            offset = Offset(1f, 1f),
+                            blurRadius = 3f
+                        )
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                )
+            }
+        }
         if (uiVisible) {
             IconButton(
                 onClick = onTogglePlay,
@@ -1267,20 +1303,6 @@ private fun DevicePhotoViewer(
         pendingDelete = photo
     }
 
-    /**
-     * Autoplay's presentation position: the item being played sits in the middle of the screen, so
-     * each one arrives centred instead of sliding in from the top edge. Two steps, because an
-     * item's real height is only known once it has been measured.
-     */
-    suspend fun centrePlayingItem(index: Int) {
-        listState.animateScrollToItem(index)
-        val viewport = listState.layoutInfo.viewportSize.height
-        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
-        if (viewport <= 0 || item.size <= 0) return
-        val top = (viewport - item.size) / 2
-        if (item.offset != top) listState.animateScrollToItem(index, -top)
-    }
-
     /** Autoplay step: hand playback to the next item (the feed then centres it). */
     fun advanceAutoPlay() {
         if (!autoPlay) return
@@ -1370,8 +1392,48 @@ private fun DevicePhotoViewer(
         // Still on the same item after the wait: nothing ended on its own, so move on.
         if (playingIndex == startedAt) advanceAutoPlay()
     }
-    // Autoplay keeps whatever it is playing in the middle of the screen. Separate from the pacing
-    // above so the wait starts with the scroll, not after it.
+    /** Scrolls the rest of the way until [index] sits centred, or does nothing when it already is. */
+    suspend fun glideToCentre(index: Int) {
+        val info = listState.layoutInfo
+        val viewport = info.viewportSize.height
+        val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+        val delta = (viewport - item.size) / 2 - item.offset
+        if (abs(delta) > 1) listState.animateScrollBy(delta.toFloat())
+    }
+
+    /**
+     * Brings [index] to the middle of the screen in one movement. The old version scrolled the item
+     * to the top first and then walked it down to the centre, which read as a jolt in the middle of
+     * playback — the whole point here is that nothing moves unless it is toward its final place.
+     */
+    suspend fun centrePlayingItem(index: Int) {
+        val info = listState.layoutInfo
+        val viewport = info.viewportSize.height
+        if (viewport <= 0) return
+        // Already laid out — the item can be measured, so the distance to the centre is exact.
+        if (info.visibleItemsInfo.any { it.index == index }) {
+            glideToCentre(index)
+            return
+        }
+        // Off screen: an item's shape says where it will land, which is good to within a pixel for
+        // photos. A portrait photo is taller than the screen, so this is the ordinary case, not an
+        // edge case — and any residue the shape got wrong is smoothed out right after.
+        val width = info.viewportSize.width
+        val photo = photos.getOrNull(index)
+        val aspect = photo?.let {
+            if (it.isVideo) videoAspects[it.id] ?: knownAspectRatio(it.width, it.height)
+            else knownAspectRatio(it.width, it.height)
+        }
+        val height = if (aspect != null && aspect > 0f && width > 0) (width / aspect).toInt() else 0
+        if (height in 1 until viewport) {
+            listState.animateScrollToItem(index, -((viewport - height) / 2))
+            glideToCentre(index)
+        } else {
+            listState.animateScrollToItem(index)
+        }
+    }
+    // Autoplay's presentation position: whatever is playing sits in the middle of the screen.
+    // Separate from the pacing above so the wait starts with the scroll, not after it.
     LaunchedEffect(autoPlay, playingIndex) {
         if (autoPlay && playingIndex >= 0) centrePlayingItem(playingIndex)
     }
@@ -1704,29 +1766,42 @@ private fun DevicePhotoViewer(
                 }
             }
 
-            // Autoplay, in the bottom corner: one icon, no label. It stays visible while a run is
-            // in progress so it can always be stopped, even with the rest of the chrome hidden.
+            // Autoplay, in the bottom corner: one small transparent icon, no label, no badge behind
+            // it — the glyph is drawn over a dark copy of itself so it stays readable on a bright
+            // photo. While a run is going it becomes an accent circle with a pause bar, and it
+            // stays when the rest of the chrome is hidden so it can always be stopped.
             AnimatedVisibility(
                 visible = uiVisible || autoPlay,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 8.dp, bottom = 12.dp)
+                    .padding(start = 4.dp, bottom = 8.dp)
             ) {
                 IconButton(
                     onClick = { toggleAutoPlay() },
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
-                        .background(if (autoPlay) Violet500 else Color.Black.copy(alpha = 0.5f))
+                        .background(if (autoPlay) Violet500.copy(alpha = 0.8f) else Color.Transparent)
                 ) {
-                    Icon(
-                        imageVector = if (autoPlay) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (autoPlay) "Stop autoplay" else "Autoplay",
-                        tint = if (autoPlay) Color.Black else Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    val glyph = if (autoPlay) Icons.Filled.Pause else Icons.Filled.PlayArrow
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = glyph,
+                            contentDescription = null,
+                            tint = Color.Black.copy(alpha = 0.45f),
+                            modifier = Modifier
+                                .offset(1.dp, 1.dp)
+                                .size(18.dp)
+                        )
+                        Icon(
+                            imageVector = glyph,
+                            contentDescription = if (autoPlay) "Stop autoplay" else "Autoplay",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
