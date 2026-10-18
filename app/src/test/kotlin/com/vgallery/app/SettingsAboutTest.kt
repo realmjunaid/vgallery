@@ -3,6 +3,7 @@ package com.vgallery.app
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vgallery.app.ui.settings.SettingsScreen
 import org.junit.Assert.assertEquals
@@ -26,6 +27,7 @@ class SettingsAboutTest {
         autoCheckEnabled: Boolean = true,
         onCheckNow: () -> Unit = {},
         onAutoCheckChange: (Boolean) -> Unit = {},
+        onOpenLink: (String) -> Unit = {},
     ) {
         compose.setContent {
             SettingsScreen(
@@ -34,6 +36,7 @@ class SettingsAboutTest {
                 autoCheckEnabled = autoCheckEnabled,
                 onCheckNow = onCheckNow,
                 onAutoCheckChange = onAutoCheckChange,
+                onOpenLink = onOpenLink,
             )
         }
     }
@@ -87,10 +90,31 @@ class SettingsAboutTest {
 
         compose.onNodeWithText("About Developer").performClick()
 
-        compose.onNodeWithText("realmjunaid").assertExists()
-        compose.onNodeWithText("Android developer \u2022 VGallery").assertExists()
+        compose.onNodeWithText("M Junaid").assertExists()
+        compose.onNodeWithText("Android developer \u2022 mjunaid.me").assertExists()
+        compose.onNodeWithText("mjunaid.me").assertExists()
         compose.onNodeWithText("Source code").assertExists()
         compose.onNodeWithText("Contact").assertExists()
+    }
+
+    @Test
+    fun theWebsiteAndTheSourceCodeOpenTheirLinks() {
+        val opened = mutableListOf<String>()
+        openSettings(onOpenLink = { opened += it })
+
+        compose.onNodeWithText("About Developer").performClick()
+        compose.onNodeWithText("Source code").performScrollTo().performClick()
+        compose.onNodeWithText("mjunaid.me").performScrollTo().performClick()
+        compose.onNodeWithText("Contact").performScrollTo().performClick()
+
+        assertEquals(
+            listOf(
+                "https://github.com/realmjunaid/vgallery",
+                "https://mjunaid.me",
+                "https://github.com/realmjunaid/vgallery/issues",
+            ),
+            opened
+        )
     }
 
     @Test

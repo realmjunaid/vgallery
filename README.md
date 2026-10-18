@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
-    <img src="https://img.shields.io/badge/Download-VGallery_v1.0.7.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.0.8.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -23,10 +23,10 @@
 - **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure. Each folder card shows its item count and total size, folders are ordered newest-added first with fresh ones raised to the top behind a small green dot until you open them, and a folder's contents always list A–Z.
 - **Photos & Videos tabs** — home splits the library in two: *Photos* for still images, *Videos* for everything that plays (videos, GIFs and animated WebPs), each as its own folder grid.
 - **Grid or list view** — a toggle next to Delete switches a folder between the thumbnail grid and a line-by-line list showing each file's title and size.
-- **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression. Videos show their poster frame instead of a black box, and start playing only when you tap them.
+- **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression. Videos show their poster frame instead of a black box, and start playing only when you tap them. While a video plays, its remaining time counts down in the corner (`0:12 / 0:29`), so the clip's length is readable at any moment.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Tap to play** — only the item you tap plays (video, GIF or animated WebP); everything else stays paused to save battery.
-- **Autoplay** ▶️ — one button in the viewer plays the whole feed hands-free: videos run to their end and stills move on after a moment, scrolling to each item automatically until you tap the button again.
+- **Autoplay** ▶️ — one small icon in the viewer's corner plays the whole feed hands-free: videos run to their end and stills move on after a moment, each item gliding to the middle of the screen as it is played, until you tap the button again.
 - **Pinch-to-zoom** — one global pinch scales the whole vertical feed together, photos and videos alike, from 1x up to 10x and anchored under your fingers. While zoomed, drag sideways to pan (clamped so no blank space shows) and drag or fling up and down to keep scrolling through every item — a diagonal drag does both at once. Pinch back to fit to scroll normally again.
 - **Share, delete, search** — system share sheet, global name search from home, long-press multi-select in folders and on home with batch actions.
 - **Built-in updates** ⬆️ — the app checks GitHub for a newer release (at most every six hours, and only if you leave it on) and offers *Update now* / *Cancel*. Update now downloads the APK, verifies its checksum and signature, and opens Android's installer without a browser.
@@ -40,14 +40,14 @@
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest).
-2. Download **`vgallery_v1.0.7-release.apk`** (under *Assets*).
+2. Download **`vgallery_v1.0.8-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
 
 > Requires Android 8.0 (API 26) or newer.
 
-> From the next release on you can skip this page: VGallery installs its own updates. It offers a
-> new version when one is out, downloads it, and hands it to Android's installer.
+> From 1.0.8 on you can skip this page: VGallery installs its own updates. It offers a new version
+> when one is out, downloads it, verifies it and hands it to Android's installer.
 
 ## 🔒 Privacy
 

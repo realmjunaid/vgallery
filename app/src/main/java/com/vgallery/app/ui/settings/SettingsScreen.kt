@@ -1,5 +1,9 @@
 package com.vgallery.app.ui.settings
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +26,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -52,12 +58,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vgallery.app.BuildConfig
+import com.vgallery.app.data.update.UPDATE_REPO
 import com.vgallery.app.ui.update.UpdateViewModel
 import com.vgallery.app.ui.update.updateStateSummary
 import com.vgallery.app.ui.theme.Black
@@ -73,6 +81,20 @@ import com.vgallery.app.ui.theme.Violet500
 /** Which About page Settings is currently showing. */
 private enum class AboutPage { APP, DEVELOPER }
 
+/** The public project: GitHub holds the releases the updater reads and the issue tracker. */
+private const val SOURCE_REPO_URL = "https://github.com/" + UPDATE_REPO
+
+/** The developer's own site, linked from About Developer. */
+private const val DEVELOPER_WEBSITE_URL = "https://mjunaid.me"
+
+/** Hands a link to whatever app handles it, and says so rather than crashing when nothing does. */
+private fun openLink(context: Context, url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+    runCatching { context.startActivity(intent) }.onFailure {
+        Toast.makeText(context, "Nothing can open $url", Toast.LENGTH_SHORT).show()
+    }
+}
+
 /**
  * Settings: the updater, then the app's own About pages. Every playback preference the app ships
  * with is chosen for the common case, so there is nothing to tune — see
@@ -87,12 +109,14 @@ fun SettingsScreen(
 ) {
     val updateState by viewModel.state.collectAsStateWithLifecycle()
     val autoCheck by viewModel.autoCheckEnabled.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     SettingsScreen(
         onBack = onBack,
         updateSummary = updateStateSummary(updateState, viewModel.currentVersionName),
         autoCheckEnabled = autoCheck,
         onCheckNow = viewModel::checkNow,
         onAutoCheckChange = viewModel::setAutoCheckEnabled,
+        onOpenLink = { openLink(context, it) },
     )
 }
 
@@ -108,6 +132,7 @@ fun SettingsScreen(
     autoCheckEnabled: Boolean,
     onCheckNow: () -> Unit,
     onAutoCheckChange: (Boolean) -> Unit,
+    onOpenLink: (String) -> Unit = {},
 ) {
     var page by remember { mutableStateOf<AboutPage?>(null) }
 
@@ -158,7 +183,7 @@ fun SettingsScreen(
                     onOpen = { page = it }
                 )
                 AboutPage.APP -> AboutAppPage()
-                AboutPage.DEVELOPER -> AboutDeveloperPage()
+                AboutPage.DEVELOPER -> AboutDeveloperPage(onOpenLink = onOpenLink)
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -323,7 +348,7 @@ private fun AboutAppPage() {
 }
 
 @Composable
-private fun AboutDeveloperPage() {
+private fun AboutDeveloperPage(onOpenLink: (String) -> Unit) {
     SettingsCard {
         Row(
             modifier = Modifier
@@ -340,13 +365,13 @@ private fun AboutDeveloperPage() {
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "realmjunaid",
+                    text = "M Junaid",
                     style = MaterialTheme.typography.titleMedium,
                     color = TextPrimary,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Android developer \u2022 VGallery",
+                    text = "Android developer \u2022 mjunaid.me",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )
@@ -377,21 +402,28 @@ private fun AboutDeveloperPage() {
         )
     }
 
-    SettingsSectionHeader("Project")
+    SettingsSectionHeader("Developer")
 
     SettingsCard {
-        AboutBullet(
-            icon = Icons.Filled.Code,
-            title = "Source code",
-            body = "The whole app is open: github.com/realmjunaid/vgallery \u2022 " +
-                "gitlab.com/realmjunaid/vgallery"
+        SettingsClickItem(
+            icon = Icons.Filled.Language,
+            title = "mjunaid.me",
+            subtitle = "Website \u2014 opens in your browser",
+            onClick = { onOpenLink(DEVELOPER_WEBSITE_URL) }
         )
         HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
-        AboutBullet(
-            icon = Icons.Filled.Person,
+        SettingsClickItem(
+            icon = Icons.Filled.Code,
+            title = "Source code",
+            subtitle = "github.com/$UPDATE_REPO \u2014 opens on GitHub",
+            onClick = { onOpenLink(SOURCE_REPO_URL) }
+        )
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        SettingsClickItem(
+            icon = Icons.Filled.Email,
             title = "Contact",
-            body = "Follow or reach out through the same account: realmjunaid on GitHub and GitLab. " +
-                "Feature requests and bug reports are welcome there."
+            subtitle = "Bug reports and ideas on the issue tracker",
+            onClick = { onOpenLink("$SOURCE_REPO_URL/issues") }
         )
     }
 }
