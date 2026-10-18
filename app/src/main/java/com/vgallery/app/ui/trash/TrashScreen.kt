@@ -56,6 +56,14 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vgallery.app.data.gallery.TrashedItem
 import com.vgallery.app.ui.gallery.StaticGalleryImage
+import com.vgallery.app.ui.theme.Black
+import com.vgallery.app.ui.theme.ErrorRed
+import com.vgallery.app.ui.theme.SurfaceElevated
+import com.vgallery.app.ui.theme.SurfaceVariant
+import com.vgallery.app.ui.theme.TextDisabled
+import com.vgallery.app.ui.theme.TextMuted
+import com.vgallery.app.ui.theme.TextPrimary
+import com.vgallery.app.ui.theme.TextSecondary
 
 /** One trashed item rendered as a grid tile. */
 @Composable
@@ -69,7 +77,7 @@ private fun TrashTile(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(8.dp))
-            .background(Color.DarkGray)
+            .background(SurfaceVariant)
             .clickable(onClick = onClick)
     ) {
         StaticGalleryImage(
@@ -162,14 +170,14 @@ fun TrashScreen(onBack: () -> Unit) {
                     Column {
                         Text(
                             text = "Trash",
-                            color = Color.White,
+                            color = TextPrimary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 18.sp
                         )
                         if (trashed.isNotEmpty()) {
                             Text(
                                 text = "${trashed.size} items • auto-deletes after 30 days",
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = TextSecondary,
                                 fontSize = 12.sp
                             )
                         }
@@ -180,7 +188,7 @@ fun TrashScreen(onBack: () -> Unit) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 },
@@ -190,7 +198,7 @@ fun TrashScreen(onBack: () -> Unit) {
                             Icon(
                                 imageVector = Icons.Filled.DeleteForever,
                                 contentDescription = "Empty trash",
-                                tint = Color.White
+                                tint = TextPrimary
                             )
                         }
                     }
@@ -203,7 +211,7 @@ fun TrashScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color.Black)
+                .background(Black)
         ) {
             if (trashed.isEmpty()) {
                 Box(
@@ -214,19 +222,19 @@ fun TrashScreen(onBack: () -> Unit) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.3f),
+                            tint = TextDisabled,
                             modifier = Modifier.size(64.dp)
                         )
                         Text(
                             text = "Trash is empty",
                             style = MaterialTheme.typography.titleMedium,
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = TextPrimary,
                             modifier = Modifier.padding(top = 12.dp)
                         )
                         Text(
                             text = "Deleted photos and videos stay here for 30 days.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = TextMuted,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 32.dp, vertical = 4.dp)
                         )
@@ -293,14 +301,14 @@ fun TrashScreen(onBack: () -> Unit) {
                                 viewModel.restore(listOf(item.uri)) { _, _ -> }
                                 previewIndex = -1
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.2f))
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated)
                         ) {
                             Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text("Restore", modifier = Modifier.padding(start = 6.dp))
                         }
                         Button(
                             onClick = { confirmSingleDelete = item },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.7f))
+                            colors = ButtonDefaults.buttonColors(containerColor = ErrorRed.copy(alpha = 0.7f))
                         ) {
                             Icon(Icons.Filled.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text("Delete forever", modifier = Modifier.padding(start = 6.dp))
@@ -321,7 +329,7 @@ fun TrashScreen(onBack: () -> Unit) {
                                 confirmEmpty = false
                                 viewModel.emptyTrash { _, _ -> }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                            colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
                         ) { Text("Empty trash") }
                     },
                     dismissButton = {
@@ -344,7 +352,7 @@ fun TrashScreen(onBack: () -> Unit) {
                                 confirmSingleDelete = null
                                 viewModel.deleteForever(listOf(Uri.parse(target.uri))) { _, _ -> }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                            colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
                         ) { Text("Delete forever") }
                     },
                     dismissButton = {

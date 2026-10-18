@@ -10,6 +10,7 @@ import coil3.gif.AnimatedImageDecoder
 import coil3.memory.MemoryCache
 import coil3.video.VideoFrameDecoder
 import coil3.request.crossfade
+import com.vgallery.app.data.gallery.scheduleTrashMaintenance
 import com.vgallery.app.di.ApplicationScope
 import com.vgallery.app.util.thumbnail.VideoThumbnailFetcher
 import com.vgallery.app.util.thumbnail.VideoThumbnailKeyer
@@ -32,6 +33,9 @@ class VGalleryApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        // Daily: drop trash entries whose files are already gone. Expired files wait for the
+        // user — Android will not delete them from the background.
+        scheduleTrashMaintenance(this)
         applicationScope.launch(Dispatchers.IO) {
             // The pre-1.3 thumbnail store (unbounded, keyed on the URI only). Replaced by
             // noBackupFilesDir/video_thumbs.

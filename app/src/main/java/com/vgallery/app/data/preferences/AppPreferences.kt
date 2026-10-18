@@ -66,6 +66,9 @@ class AppPreferences @Inject constructor(
         val UPDATE_CHECK_ENABLED = booleanPreferencesKey("update_check_enabled")
         val UPDATE_LAST_CHECK = longPreferencesKey("update_last_check")
         val UPDATE_SKIPPED_VERSION = stringPreferencesKey("update_skipped_version")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val ACCENT_CHOICE = stringPreferencesKey("accent_choice")
+        val AMOLED_BLACK = booleanPreferencesKey("amoled_black")
     }
 
     /** The stored preferences; an `IOException` while reading yields empty preferences (defaults). */
@@ -238,6 +241,33 @@ class AppPreferences @Inject constructor(
 
     suspend fun updateSkippedUpdate(version: String): Boolean =
         safeEdit { it[Keys.UPDATE_SKIPPED_VERSION] = version }
+
+    // ── Appearance ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * How the app looks. Defaults are the look VGallery shipped with (follow the phone, monochrome
+     * accent, pure black), so an install that never touches Appearance is unchanged. An unknown
+     * stored value falls back the same way rather than crashing.
+     */
+    val themeSettings: Flow<ThemeSettings> = data.map { prefs ->
+        ThemeSettings(
+            mode = prefs[Keys.THEME_MODE].toEnumOrDefault(ThemeMode.SYSTEM),
+            accent = prefs[Keys.ACCENT_CHOICE].toEnumOrDefault(AccentChoice.MONOCHROME),
+            amoledBlack = prefs[Keys.AMOLED_BLACK] ?: true
+        )
+    }
+
+    private inline fun <reified T : Enum<T>> String?.toEnumOrDefault(fallback: T): T =
+        this?.let { stored -> enumValues<T>().firstOrNull { it.name == stored } } ?: fallback
+
+    suspend fun updateThemeMode(mode: ThemeMode): Boolean =
+        safeEdit { it[Keys.THEME_MODE] = mode.name }
+
+    suspend fun updateAccent(accent: AccentChoice): Boolean =
+        safeEdit { it[Keys.ACCENT_CHOICE] = accent.name }
+
+    suspend fun updateAmoledBlack(value: Boolean): Boolean =
+        safeEdit { it[Keys.AMOLED_BLACK] = value }
 
     // ── Trash ─────────────────────────────────────────────────────────────────────────────
 

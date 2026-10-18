@@ -35,8 +35,6 @@ class TrashViewModel @Inject constructor(
         viewModelScope.launch {
             repository.trashedMedia.collect { _trashed.value = it }
         }
-        // Auto-purge on open: items past the 30-day TTL are permanently deleted.
-        viewModelScope.launch { autoPurgeExpired() }
     }
 
     fun answerConsent(granted: Boolean) {
@@ -118,11 +116,17 @@ class TrashViewModel @Inject constructor(
         }
     }
 
-    /** Permanently deletes items whose 30-day TTL has elapsed (called on screen open). */
-    private suspend fun autoPurgeExpired() {
-        val items = _trashed.value
-        val expired = expiredTrashUris(items, System.currentTimeMillis())
-        if (expired.isEmpty()) return
-        deleteForever(expired.map { Uri.parse(it) }) { _, _ -> }
+    /**
+     * Permanently deletes items whose 30-day TTL has elapsed. Android will not delete another
+     * app's files without the user's approval, so this is only called after the user has said yes
+     * — the system consent sheet then follows through [consentRequests].
+     */
+    fun purgeExpired(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+        val expired = expiredTrashUris(_trashed.value, System.currentTimeMillis())
+        if (expired.isEmpty()) {
+            onDone(true, "Nothing to delete")
+            return
+        }
+        deleteForever(expired.map { Uri.parse(it) }, onDone)
     }
 }

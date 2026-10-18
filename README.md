@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
-    <img src="https://img.shields.io/badge/Download-VGallery_v1.0.10.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.0.11.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -30,17 +30,18 @@
 - **Pinch-to-zoom** — one global pinch scales the whole vertical feed together, photos and videos alike, from 1x up to 10x and anchored under your fingers. While zoomed, drag sideways to pan (clamped so no blank space shows) and drag or fling up and down to keep scrolling through every item — a diagonal drag does both at once. Pinch back to fit to scroll normally again.
 - **Share, delete, search** — system share sheet, folder search from home (it finds folders, not loose files — home is where you pick a folder), long-press multi-select in folders and on home with batch actions.
 - **Built-in updates** ⬆️ — the app checks GitHub for a newer release (at most every six hours, and only if you leave it on) and offers *Update now* / *Cancel*. Update now downloads the APK, verifies its checksum and signature, and opens Android's installer without a browser.
-- **Trash** 🗑️ — deleting moves items to a Google-Photos-style Trash instead of wiping them: everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent).
+- **Trash** 🗑️ — deleting moves items to a Google-Photos-style Trash instead of wiping them: everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent). A daily job drops entries whose files are already gone, and once something has sat for 30 days the app asks before deleting it — Android will not do that from the background.
 - **Move to folder** 📁 — pick photos or videos inside a folder and move them into any other folder on the device in one step: long-press to start selecting, and the Move action appears with Share, Details and Delete.
 - **Details sheet** — size, resolution, date, folder and type for any photo or selection.
 - **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
+- **Appearance** — Settings › Appearance: follow the phone, or force light or dark, pick an accent (or your wallpaper's colour on Android 12+), and a pure-black AMOLED option. The full-screen viewer stays black in every theme, because a photo on a white backdrop reads wrong.
 - **Modern feel** — crossfade image loading, animated grids, real-photo album covers.
 - **Private by design** — your photos never leave your phone. The updater is the only thing that ever touches the network, and you can switch it off (see [Privacy](#-privacy)).
 
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest).
-2. Download **`vgallery_v1.0.10-release.apk`** (under *Assets*).
+2. Download **`vgallery_v1.0.11-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
 
@@ -90,7 +91,9 @@ Run the unit tests:
 - **Hilt** — dependency injection
 - **DataStore** — lightweight settings persistence
 - **HttpURLConnection + the GitHub Releases API** — the in-app updater (no HTTP library added)
-- **JUnit + Robolectric + Kotest** — unit & property tests
+- **WorkManager** — the daily trash tidy-up
+- **JUnit + Robolectric + Kotest + Roborazzi** — unit, property and screenshot tests
+- **GitHub Actions** — builds and tests every push to `main`
 
 ## 🗂 Project Structure
 

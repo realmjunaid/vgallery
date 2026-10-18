@@ -70,3 +70,29 @@ fun filterTrashed(rows: List<DevicePhotoRow>, trashedUris: Set<String>): List<De
 /** URIs of items whose trash TTL has expired. */
 fun expiredTrashUris(items: List<TrashedItem>, nowMs: Long, ttlMs: Long = TRASH_TTL_MS): List<String> =
     items.filter { nowMs - it.trashedAtMs >= ttlMs }.map { it.uri }
+
+/**
+ * What a trash sweep should do, split by what Android allows without the user present.
+ *
+ * [pruneUris] are entries whose file is already gone: dropping them needs no consent, so a
+ * background job can do it. [expired] are still on disk and past the 30-day TTL: deleting those
+ * needs the user's approval, so they are only ever offered, never deleted in the background.
+ */
+data class TrashMaintenancePlan(
+    val pruneUris: List<String>,
+    val expired: List<TrashedItem>,
+)
+
+fun trashMaintenancePlan(
+    items: List<TrashedItem>,
+    goneUris: Set<String>,
+    nowMs: Long,
+    ttlMs: Long = TRASH_TTL_MS,
+): TrashMaintenancePlan {
+    val gone = items.filter { it.uri in goneUris }
+    val stillThere = items.filter { it.uri !in goneUris }
+    return TrashMaintenancePlan(
+        pruneUris = gone.map { it.uri },
+        expired = stillThere.filter { nowMs - it.trashedAtMs >= ttlMs },
+    )
+}

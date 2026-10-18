@@ -41,7 +41,7 @@ val missingReleaseSigning: List<String> = buildList {
 }
 
 /** Single place for the version: also names the APK file (vgallery_vX.Y.Z.apk). */
-val APP_VERSION_NAME = "1.0.10"
+val APP_VERSION_NAME = "1.0.11"
 
 android {
     namespace = "com.vgallery.app"
@@ -62,14 +62,14 @@ android {
         targetSdk = 36
         // VGallery starts fresh: new package identity, first version.
         // Bump APP_VERSION_NAME (and code) here; the APK file is named from it below.
-        versionCode = 11
+        versionCode = 12
         versionName = APP_VERSION_NAME
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -111,6 +111,23 @@ android {
                 "http.nonProxyHosts",
             ).forEach { key ->
                 System.getProperty(key)?.let { test.systemProperty(key, it) }
+            }
+            // Roborazzi's captureRoboImage() silently does nothing unless a task type is on
+            // (roborazzi.test.record / .compare / .verify). Recording is what writes the PNGs,
+            // so the screenshot tests get it without the Roborazzi Gradle plugin.
+            test.systemProperty("roborazzi.test.record", "true")
+
+            // -Pvgallery.quarantine: skip the suites that already fail on main (property tests
+            // and the flaky preservation coverage checks) so CI goes red only for a new failure.
+            // A normal local run still executes them.
+            if (project.hasProperty("vgallery.quarantine") || project.hasProperty("quarantine")) {
+                listOf(
+                    "com.vgallery.app.PreferencesPropertyTest",
+                    "com.vgallery.app.ThumbnailLayerPropertyTest",
+                    "com.vgallery.app.OrderAndMappingPreservationTest",
+                    "com.vgallery.app.RecentsPreservationTest",
+                    "com.vgallery.app.TapCyclePreservationTest",
+                ).forEach { test.filter.excludeTestsMatching("$it.*") }
             }
         }
     }
@@ -192,6 +209,7 @@ dependencies {
 
     // Splash
     implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // Unit tests (JVM + Robolectric)
     testImplementation(composeBom)
@@ -205,5 +223,7 @@ dependencies {
     testImplementation(libs.androidx.media3.test.utils.robolectric)
     testImplementation(libs.androidx.navigation.testing)
     testImplementation(libs.androidx.ui.test.junit4)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

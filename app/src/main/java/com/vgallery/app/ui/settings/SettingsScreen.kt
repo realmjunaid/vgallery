@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,17 +21,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Contrast
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
@@ -59,16 +66,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vgallery.app.BuildConfig
+import com.vgallery.app.data.preferences.AccentChoice
+import com.vgallery.app.data.preferences.ThemeMode
+import com.vgallery.app.data.preferences.ThemeSettings
 import com.vgallery.app.data.update.UPDATE_REPO
 import com.vgallery.app.ui.update.UpdateViewModel
 import com.vgallery.app.ui.update.updateStateSummary
 import com.vgallery.app.ui.theme.Black
+import com.vgallery.app.ui.theme.LocalGalleryColors
+import com.vgallery.app.ui.theme.OnAccent
 import com.vgallery.app.ui.theme.SurfaceElevated
 import com.vgallery.app.ui.theme.SurfaceVariant
 import com.vgallery.app.ui.theme.TextDisabled
@@ -77,6 +92,7 @@ import com.vgallery.app.ui.theme.TextPrimary
 import com.vgallery.app.ui.theme.TextSecondary
 import com.vgallery.app.ui.theme.Violet400
 import com.vgallery.app.ui.theme.Violet500
+import com.vgallery.app.ui.theme.galleryColors
 
 /** Which About page Settings is currently showing. */
 private enum class AboutPage { APP, DEVELOPER }
@@ -106,9 +122,11 @@ private fun openLink(context: Context, url: String) {
 fun SettingsScreen(
     onBack: () -> Unit,
     viewModel: UpdateViewModel = hiltViewModel(),
+    themeViewModel: ThemeSettingsViewModel = hiltViewModel(),
 ) {
     val updateState by viewModel.state.collectAsStateWithLifecycle()
     val autoCheck by viewModel.autoCheckEnabled.collectAsStateWithLifecycle()
+    val appearance by themeViewModel.theme.collectAsStateWithLifecycle()
     val context = LocalContext.current
     SettingsScreen(
         onBack = onBack,
@@ -117,12 +135,16 @@ fun SettingsScreen(
         onCheckNow = viewModel::checkNow,
         onAutoCheckChange = viewModel::setAutoCheckEnabled,
         onOpenLink = { openLink(context, it) },
+        appearance = appearance,
+        onThemeModeChange = themeViewModel::setMode,
+        onAccentChange = themeViewModel::setAccent,
+        onAmoledChange = themeViewModel::setAmoledBlack,
     )
 }
 
 /**
- * The screen itself, with everything hoisted: the Settings destination fills it from the updater,
- * and tests drive it with plain values.
+ * The screen itself, with everything hoisted: the Settings destination fills it from the updater
+ * and the appearance store, and tests drive it with plain values.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,6 +155,10 @@ fun SettingsScreen(
     onCheckNow: () -> Unit,
     onAutoCheckChange: (Boolean) -> Unit,
     onOpenLink: (String) -> Unit = {},
+    appearance: ThemeSettings = ThemeSettings(),
+    onThemeModeChange: (ThemeMode) -> Unit = {},
+    onAccentChange: (AccentChoice) -> Unit = {},
+    onAmoledChange: (Boolean) -> Unit = {},
 ) {
     var page by remember { mutableStateOf<AboutPage?>(null) }
 
@@ -180,7 +206,11 @@ fun SettingsScreen(
                     autoCheckEnabled = autoCheckEnabled,
                     onCheckNow = onCheckNow,
                     onAutoCheckChange = onAutoCheckChange,
-                    onOpen = { page = it }
+                    onOpen = { page = it },
+                    appearance = appearance,
+                    onThemeModeChange = onThemeModeChange,
+                    onAccentChange = onAccentChange,
+                    onAmoledChange = onAmoledChange,
                 )
                 AboutPage.APP -> AboutAppPage()
                 AboutPage.DEVELOPER -> AboutDeveloperPage(onOpenLink = onOpenLink)
@@ -219,7 +249,50 @@ private fun SettingsMenu(
     onCheckNow: () -> Unit,
     onAutoCheckChange: (Boolean) -> Unit,
     onOpen: (AboutPage) -> Unit,
+    appearance: ThemeSettings,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    onAccentChange: (AccentChoice) -> Unit,
+    onAmoledChange: (Boolean) -> Unit,
 ) {
+    SettingsSectionHeader("Appearance")
+
+    SettingsCard {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            SettingsRowTitle(
+                icon = Icons.Filled.Contrast,
+                title = "Theme",
+                subtitle = "Light, dark, or whatever your phone is set to"
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            ThemeModeRow(selected = appearance.mode, onSelect = onThemeModeChange)
+        }
+
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            SettingsRowTitle(
+                icon = Icons.Filled.Palette,
+                title = "Accent",
+                subtitle = "Monochrome is VGallery's own look; System uses your wallpaper"
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            AccentRow(selected = appearance.accent, onSelect = onAccentChange)
+        }
+
+        // Meaningless on a light background, so it is only offered where it does something.
+        if (appearance.mode != ThemeMode.LIGHT) {
+            HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+
+            SettingsSwitchItem(
+                icon = Icons.Filled.DarkMode,
+                title = "Pure black",
+                subtitle = "AMOLED: the darkest background the screen can draw",
+                checked = appearance.amoledBlack,
+                onCheckedChange = onAmoledChange
+            )
+        }
+    }
+
     SettingsSectionHeader("Updates")
 
     SettingsCard {
@@ -259,6 +332,111 @@ private fun SettingsMenu(
             subtitle = "Who makes VGallery",
             onClick = { onOpen(AboutPage.DEVELOPER) }
         )
+    }
+}
+
+/** Icon + title + one-line explanation: the head of an Appearance row. */
+@Composable
+private fun SettingsRowTitle(icon: ImageVector, title: String, subtitle: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Violet400,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
+            Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+        }
+    }
+}
+
+private fun ThemeMode.label(): String = when (this) {
+    ThemeMode.SYSTEM -> "System"
+    ThemeMode.LIGHT -> "Light"
+    ThemeMode.DARK -> "Dark"
+}
+
+private fun AccentChoice.label(): String = when (this) {
+    AccentChoice.MONOCHROME -> "Monochrome"
+    AccentChoice.VIOLET -> "Violet"
+    AccentChoice.BLUE -> "Blue"
+    AccentChoice.GREEN -> "Green"
+    AccentChoice.AMBER -> "Amber"
+    AccentChoice.PINK -> "Pink"
+    AccentChoice.SYSTEM -> "System"
+}
+
+/** System / Light / Dark, as three equal pills: the chosen one is filled with the accent. */
+@Composable
+private fun ThemeModeRow(selected: ThemeMode, onSelect: (ThemeMode) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ThemeMode.entries.forEach { mode ->
+            val active = mode == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (active) Violet500 else SurfaceElevated)
+                    .clickable { onSelect(mode) }
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "${mode.label()} theme"
+                        this.selected = active
+                    }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = mode.label(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (active) OnAccent else TextSecondary,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One dot per accent, each drawn in the colour it would actually use in this theme, so the choice
+ * is visible before it is made.
+ */
+@Composable
+private fun AccentRow(selected: AccentChoice, onSelect: (AccentChoice) -> Unit) {
+    val dark = LocalGalleryColors.current.isDark
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        AccentChoice.entries.forEach { choice ->
+            val palette = galleryColors(dark = dark, amoled = true, accent = choice)
+            val active = choice == selected
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(palette.accent)
+                    .border(
+                        width = if (active) 2.dp else 1.dp,
+                        color = if (active) TextPrimary else TextDisabled,
+                        shape = CircleShape
+                    )
+                    .clickable { onSelect(choice) }
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "${choice.label()} accent"
+                        this.selected = active
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (active) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = null,
+                        tint = palette.onAccent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

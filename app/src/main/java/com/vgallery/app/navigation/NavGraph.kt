@@ -46,7 +46,7 @@ interface VGalleryScreens {
         onPlaySelected: (Uri, Int, Boolean) -> Unit,
         onSettingsClick: () -> Unit,
         onTrashClick: () -> Unit,
-        onDeviceGalleryClick: () -> Unit = {},
+        onDeviceGalleryClick: () -> Unit,
     )
 
     @Composable

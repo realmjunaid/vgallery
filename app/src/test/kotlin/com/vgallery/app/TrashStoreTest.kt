@@ -10,6 +10,7 @@ import com.vgallery.app.data.gallery.decodeTrashEntry
 import com.vgallery.app.data.gallery.decodeTrashList
 import com.vgallery.app.data.gallery.encodeTrashList
 import com.vgallery.app.data.gallery.expiredTrashUris
+import com.vgallery.app.data.gallery.trashMaintenancePlan
 import com.vgallery.app.data.gallery.filterTrashed
 import com.vgallery.app.data.gallery.removeTrashEntries
 import com.vgallery.app.data.gallery.trashEntryUri
@@ -128,6 +129,27 @@ class TrashStoreTest {
 
         val expired = expiredTrashUris(listOf(fresh, boundary, old), now)
         assertEquals(listOf(boundary.uri, old.uri), expired)
+    }
+
+    /**
+     * A background sweep may only drop entries whose file is already gone. An expired file that is
+     * still on disk is reported, never treated as something the job can delete by itself.
+     */
+    @Test
+    fun trashMaintenancePlan_prunesGoneAndOnlyReportsExpired() {
+        val now = 1_000_000_000L
+        val gone = TrashedItem("content://m/gone", "gone.jpg", "image/jpeg", now)
+        val expired = TrashedItem("content://m/old", "old.jpg", "image/jpeg", now - TRASH_TTL_MS)
+        val fresh = TrashedItem("content://m/new", "new.jpg", "image/jpeg", now - 1_000L)
+
+        val plan = trashMaintenancePlan(
+            items = listOf(gone, expired, fresh),
+            goneUris = setOf(gone.uri),
+            nowMs = now,
+        )
+
+        assertEquals(listOf(gone.uri), plan.pruneUris)
+        assertEquals(listOf(expired), plan.expired)
     }
 
     @Test

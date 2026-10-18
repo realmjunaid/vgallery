@@ -156,6 +156,8 @@ import com.vgallery.app.data.gallery.hasDeviceGalleryPermission
 import com.vgallery.app.ui.theme.Black
 import com.vgallery.app.ui.theme.ErrorRed
 import com.vgallery.app.ui.theme.NewFolderDot
+import com.vgallery.app.ui.theme.OnAccent
+import com.vgallery.app.ui.theme.SurfaceCard
 import com.vgallery.app.ui.theme.SurfaceElevated
 import com.vgallery.app.ui.theme.SurfaceVariant
 import com.vgallery.app.ui.theme.TextDisabled
@@ -164,6 +166,8 @@ import com.vgallery.app.ui.theme.TextPrimary
 import com.vgallery.app.ui.theme.TextSecondary
 import com.vgallery.app.ui.theme.Violet400
 import com.vgallery.app.ui.theme.Violet500
+import com.vgallery.app.ui.theme.DarkViewerTheme
+import com.vgallery.app.ui.theme.ViewerBackdrop
 
 /**
  * Auto device gallery (Google Photos style): no manual folder pick.
@@ -364,7 +368,7 @@ fun DeviceGalleryScreen(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = Color.White
+                                tint = TextPrimary
                             )
                         }
                     }
@@ -568,18 +572,22 @@ fun DeviceGalleryScreen(
     }
 
     // Full view: continuous vertical feed with everything, overlaid on the gallery.
+    // A dark island: the viewer is black in every theme, because a photograph judged against a
+    // light backdrop reads wrong — but it keeps the accent the user chose.
     if (viewerIndex >= 0 && viewerIndex < viewerPhotos.size) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Black)
-        ) {
-            DevicePhotoViewer(
-                photos = viewerPhotos,
-                startIndex = viewerIndex,
-                title = uiState.selectedAlbum ?: "",
-                onDismiss = { dismissViewer() }
-            )
+        DarkViewerTheme {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(ViewerBackdrop)
+            ) {
+                DevicePhotoViewer(
+                    photos = viewerPhotos,
+                    startIndex = viewerIndex,
+                    title = uiState.selectedAlbum ?: "",
+                    onDismiss = { dismissViewer() }
+                )
+            }
         }
     }
 
@@ -648,7 +656,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
                 onClick = onGrant,
                 colors = ButtonDefaults.buttonColors(containerColor = Violet500)
             ) {
-                Text("Allow access", color = Color.Black)
+                Text("Allow access", color = OnAccent)
             }
         }
     }
@@ -692,7 +700,7 @@ internal fun StaticGalleryImage(
 }
 
 @Composable
-private fun EmptyState(message: String) {
+internal fun EmptyState(message: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
@@ -724,7 +732,7 @@ private val HomeTab.icon: ImageVector
  * Switching happens from the cached scan, so there is no rescan and no spinner.
  */
 @Composable
-private fun HomeTabs(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
+internal fun HomeTabs(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
     TabRow(
         selectedTabIndex = selected.ordinal,
         containerColor = Color.Transparent,
@@ -758,7 +766,7 @@ private fun HomeTabs(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AlbumGrid(
+internal fun AlbumGrid(
     albums: List<DeviceAlbum>,
     newFolders: Set<String>,
     onAlbumClick: (DeviceAlbum) -> Unit,
@@ -778,9 +786,9 @@ private fun AlbumGrid(
                 modifier = Modifier
                     .animateItem()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF1E1E1E))
+                    .background(SurfaceCard)
                     .then(
-                        if (isSelected) Modifier.border(2.dp, Color.White, RoundedCornerShape(14.dp))
+                        if (isSelected) Modifier.border(2.dp, Violet500, RoundedCornerShape(14.dp))
                         else Modifier
                     )
                     .combinedClickable(
@@ -799,7 +807,7 @@ private fun AlbumGrid(
                             .fillMaxWidth()
                             .aspectRatio(1.4f)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color.DarkGray)
+                            .background(SurfaceVariant)
                     )
                     // A folder added since the last scan carries a green dot until it is opened.
                     if (album.name in newFolders) {
@@ -850,7 +858,7 @@ private fun AlbumGrid(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PhotoGrid(
+internal fun PhotoGrid(
     photos: List<DevicePhotoRow>,
     onPhotoClick: (Int) -> Unit,
     selectedIds: Set<Long>,
@@ -869,9 +877,9 @@ private fun PhotoGrid(
                 modifier = Modifier
                     .animateItem()
                     .aspectRatio(1f)
-                    .background(Color.DarkGray)
+                    .background(SurfaceVariant)
                     .then(
-                        if (isSelected) Modifier.border(2.dp, Color.White) else Modifier
+                        if (isSelected) Modifier.border(2.dp, Violet500) else Modifier
                     )
                     .combinedClickable(
                         onClick = { onPhotoClick(index) },
@@ -957,7 +965,7 @@ private fun PhotoGrid(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MediaList(
+internal fun MediaList(
     photos: List<DevicePhotoRow>,
     onPhotoClick: (Int) -> Unit,
     selectedIds: Set<Long>,
@@ -981,7 +989,7 @@ private fun MediaList(
                     modifier = Modifier
                         .size(54.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color.DarkGray)
+                        .background(SurfaceVariant)
                 ) {
                     StaticGalleryImage(
                         uri = photo.uri,
@@ -1945,7 +1953,7 @@ private fun DeleteConfirmDialog(
 /** Contextual bar for multi-select: count + share/info/delete/clear. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SelectionBar(
+internal fun SelectionBar(
     count: Int,
     noun: String,
     onShare: () -> Unit,
@@ -1970,22 +1978,22 @@ private fun SelectionBar(
                 Icon(
                     imageVector = Icons.Filled.Clear,
                     contentDescription = "Clear selection",
-                    tint = Color.White
+                    tint = TextPrimary
                 )
             }
         },
         actions = {
             IconButton(onClick = onMove) {
-                Icon(Icons.Filled.Folder, contentDescription = "Move", tint = Color.White)
+                Icon(Icons.Filled.Folder, contentDescription = "Move", tint = TextPrimary)
             }
             IconButton(onClick = onShare) {
-                Icon(Icons.Filled.Share, contentDescription = "Share", tint = Color.White)
+                Icon(Icons.Filled.Share, contentDescription = "Share", tint = TextPrimary)
             }
             IconButton(onClick = onInfo) {
-                Icon(Icons.Filled.Info, contentDescription = "Details", tint = Color.White)
+                Icon(Icons.Filled.Info, contentDescription = "Details", tint = TextPrimary)
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color.White)
+                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = TextPrimary)
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)

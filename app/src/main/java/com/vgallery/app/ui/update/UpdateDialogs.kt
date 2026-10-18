@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -96,7 +97,7 @@ fun UpdatePromptHost(
                             .verticalScroll(rememberScrollState())
                     ) {
                         Text(
-                            text = releaseNotes(notes),
+                            text = releaseNotes(notes, highlight = TextPrimary),
                             color = TextSecondary,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -233,7 +234,7 @@ fun updateStateSummary(state: UpdateState, currentVersionName: String): String =
  * usually opens with are left out too, so the prompt is the change list rather than the announcement
  * — and a note that has no list at all is still shown, cleaned, instead of being hidden.
  */
-internal fun releaseNotes(notes: String): AnnotatedString = buildAnnotatedString {
+internal fun releaseNotes(notes: String, highlight: Color = Color.White): AnnotatedString = buildAnnotatedString {
     val lines = notes.lines().map { it.trim() }
     val shown = lines.filter { isBullet(it) }.ifEmpty { lines.filter { it.isNotEmpty() } }
     var written = false
@@ -253,7 +254,7 @@ internal fun releaseNotes(notes: String): AnnotatedString = buildAnnotatedString
         if (bullet) append("\u2022 ")
         pieces.forEach { (text, bold) ->
             if (bold) {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) { append(text) }
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = highlight)) { append(text) }
             } else {
                 append(text)
             }

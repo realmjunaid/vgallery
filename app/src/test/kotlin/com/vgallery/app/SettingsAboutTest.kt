@@ -62,7 +62,7 @@ class SettingsAboutTest {
         var checks = 0
         openSettings(onCheckNow = { checks++ })
 
-        compose.onNodeWithText("Check for updates").performClick()
+        compose.onNodeWithText("Check for updates").performScrollTo().performClick()
 
         assertEquals(1, checks)
     }
@@ -79,7 +79,7 @@ class SettingsAboutTest {
         var enabled: Boolean? = null
         openSettings(autoCheckEnabled = true, onAutoCheckChange = { enabled = it })
 
-        compose.onNodeWithText("Automatic update check").performClick()
+        compose.onNodeWithText("Automatic update check").performScrollTo().performClick()
 
         assertEquals(false, enabled)
     }
@@ -88,7 +88,7 @@ class SettingsAboutTest {
     fun aboutDeveloperPageDescribesTheDeveloper() {
         openSettings()
 
-        compose.onNodeWithText("About Developer").performClick()
+        compose.onNodeWithText("About Developer").performScrollTo().performClick()
 
         compose.onNodeWithText("M Junaid").assertExists()
         compose.onNodeWithText("Android developer \u2022 mjunaid.me").assertExists()
@@ -102,7 +102,7 @@ class SettingsAboutTest {
         val opened = mutableListOf<String>()
         openSettings(onOpenLink = { opened += it })
 
-        compose.onNodeWithText("About Developer").performClick()
+        compose.onNodeWithText("About Developer").performScrollTo().performClick()
         compose.onNodeWithText("Source code").performScrollTo().performClick()
         compose.onNodeWithText("mjunaid.me").performScrollTo().performClick()
         compose.onNodeWithText("Contact").performScrollTo().performClick()
@@ -121,7 +121,7 @@ class SettingsAboutTest {
     fun aboutPageReportsPrivacyAndFeatures() {
         openSettings()
 
-        compose.onNodeWithText("About VGallery").performClick()
+        compose.onNodeWithText("About VGallery").performScrollTo().performClick()
 
         compose.onNodeWithText("Version ${BuildConfig.VERSION_NAME}").assertExists()
         compose.onNodeWithText("Folder-wise gallery").assertExists()
