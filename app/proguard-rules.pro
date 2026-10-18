@@ -1,4 +1,4 @@
-# SnapReel ProGuard Rules
+# VGallery ProGuard Rules
 -keepattributes *Annotation*
 
 # Hilt

@@ -1,10 +1,10 @@
-# VPhoto — Scroll Your Photos Like Reels
+# VGallery — Scroll Your Photos Like Reels
 
-**Your camera roll, reimagined as Reels.** VPhoto is a free, **100% offline photo gallery app** for Android where you scroll through your own photos vertically, full-screen — just like Instagram Reels or TikTok, but for your memories. Open the app and every photo is already there, organized folder-wise. No accounts, no uploads, no tracking.
+**Your camera roll, reimagined as Reels.** VGallery is a free, **100% offline photo gallery app** for Android where you scroll through your own photos vertically, full-screen — just like Instagram Reels or TikTok, but for your memories. Open the app and every photo is already there, organized folder-wise. No accounts, no uploads, no tracking.
 
 <p>
-  <a href="https://github.com/realmjunaid/vphoto/releases/latest">
-    <img src="https://img.shields.io/badge/Download-vPhoto_v1.0.6.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+  <a href="https://github.com/realmjunaid/vgallery/releases/latest">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.0.6.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -18,12 +18,13 @@
 
 ## ✨ Features
 
-- **Reels-style vertical scrolling** ⭐ — the heart of VPhoto. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
+- **Reels-style vertical scrolling** ⭐ — the heart of VGallery. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
 - **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure.
+- **Photos & Videos tabs** — home splits the library in two: *Photos* for still images, *Videos* for everything that plays (videos, GIFs and animated WebPs), each as its own folder grid.
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Middle-only playback** — GIFs and animated WebPs play only when centered on screen; the rest stay paused to save battery.
-- **Pinch-to-zoom** — 1x–5x zoom with two fingers, pan in every direction while zoomed.
+- **Pinch-to-zoom** — two-finger pinch zooms the feed from 1x up to 10x, photos and videos alike. Drag to pan while zoomed; the feed scrolls again as soon as you pinch back to fit.
 - **Share, delete, search** — system share sheet, delete with confirm + Android consent, global name search from home, long-press multi-select in folders and on home with batch actions.
 - **Details sheet** — size, resolution, date, folder and type for any photo or selection.
 - **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
@@ -32,10 +33,10 @@
 
 ## 📥 Download & Install
 
-1. Go to the [**latest release**](https://github.com/realmjunaid/vphoto/releases/latest).
-2. Download **`vphoto_v1.0.6-release.apk`** (under *Assets*).
+1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest).
+2. Download **`vgallery_v1.0.6-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
-4. Open **VPhoto**, allow photo access — done, your gallery is ready.
+4. Open **VGallery**, allow photo access — done, your gallery is ready.
 
 > Requires Android 8.0 (API 26) or newer.
 
@@ -50,12 +51,12 @@
 Requirements: **JDK 17** and the **Android SDK** (compileSdk 36).
 
 ```bash
-git clone https://github.com/realmjunaid/vphoto.git
-cd vphoto
+git clone https://github.com/realmjunaid/vgallery.git
+cd vgallery
 # point to your SDK, e.g. C:\Users\you\AppData\Local\Android\Sdk
 echo "sdk.dir=C:\\Users\\you\\AppData\\Local\\Android\\Sdk" > local.properties
 ./gradlew :app:assembleDebug
-# APK: app/build/outputs/apk/debug/vphoto_v1.0.0.apk
+# APK: app/build/outputs/apk/debug/vgallery_v1.0.0.apk
 ```
 
 Run the unit tests:
@@ -76,7 +77,7 @@ Run the unit tests:
 ## 🗂 Project Structure
 
 ```
-app/src/main/java/com/vphoto/app/
+app/src/main/java/com/vgallery/app/
 ├── data/gallery/      # MediaStore repository, album grouping
 ├── ui/gallery/        # Auto gallery: albums → grid → full view
 ├── ui/settings/       # Settings (display, playback, about)
@@ -88,16 +89,16 @@ app/src/main/java/com/vphoto/app/
 
 ## ❓ Frequently Asked Questions
 
-**Is VPhoto free?**
-Yes — VPhoto is free and open source (MIT). No ads, no premium tier.
+**Is VGallery free?**
+Yes — VGallery is free and open source (MIT). No ads, no premium tier.
 
-**Does VPhoto work offline?**
-Fully. VPhoto requests no internet permission, so it works with Wi-Fi and mobile data turned off.
+**Does VGallery work offline?**
+Fully. VGallery requests no internet permission, so it works with Wi-Fi and mobile data turned off.
 
-**Is VPhoto a Google Photos alternative?**
-If you want a simple offline gallery without cloud backup or an account, yes. VPhoto only shows photos already on your phone.
+**Is VGallery a Google Photos alternative?**
+If you want a simple offline gallery without cloud backup or an account, yes. VGallery only shows photos already on your phone.
 
-**Which formats can VPhoto show?**
+**Which formats can VGallery show?**
 JPG, PNG, WebP (including animated WebP) and GIF, organized automatically by folder.
 
 ## 🤝 Contributing

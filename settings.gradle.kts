@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VPhoto"
+rootProject.name = "VGallery"
 include(":app")
