@@ -279,13 +279,4 @@ class DeviceGalleryViewModel @Inject constructor(
         return repository.cachedSnapshot()
             .filter { it.bucketName.ifBlank { "Unknown" } in normalized && it.inTab(tab) }
     }
-
-    /** Name search across every folder of the selected tab (home search icon). */
-    fun searchAll(query: String): List<DevicePhotoRow> {
-        val q = query.trim()
-        if (q.isEmpty()) return emptyList()
-        val tab = _uiState.value.selectedTab
-        return repository.cachedSnapshot()
-            .filter { it.name.contains(q, ignoreCase = true) && it.inTab(tab) }
-    }
 }

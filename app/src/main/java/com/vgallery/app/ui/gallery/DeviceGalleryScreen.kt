@@ -148,6 +148,8 @@ import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DevicePhotoRow
 import com.vgallery.app.data.gallery.HomeTab
 import com.vgallery.app.data.gallery.formatBytes
+import com.vgallery.app.data.gallery.filterAlbumsByName
+import com.vgallery.app.data.gallery.homeSummary
 import com.vgallery.app.data.gallery.formatMediaDate
 import com.vgallery.app.data.gallery.formatResolution
 import com.vgallery.app.data.gallery.hasDeviceGalleryPermission
@@ -339,8 +341,15 @@ fun DeviceGalleryScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         if (uiState.selectedAlbum == null && uiState.totalCount > 0) {
+                            // Items, folders, then how much space all of it takes — the aggregate
+                            // the folder cards show one by one, so the home header is a real total
+                            // instead of a mode label.
                             Text(
-                                text = "${uiState.totalCount} items • ${uiState.albums.size} folders (auto)",
+                                text = homeSummary(
+                                    items = uiState.totalCount,
+                                    folders = uiState.albums.size,
+                                    totalBytes = uiState.albums.sumOf { it.sizeBytes }
+                                ),
                                 color = TextMuted,
                                 fontSize = 12.sp
                             )
@@ -451,7 +460,7 @@ fun DeviceGalleryScreen(
                                         .padding(horizontal = 12.dp, vertical = 8.dp),
                                     placeholder = {
                                         Text(
-                                            text = "Search all ${uiState.selectedTab.label.lowercase()}",
+                                            text = "Search folders",
                                             color = TextMuted
                                         )
                                     },
@@ -487,18 +496,28 @@ fun DeviceGalleryScreen(
                                     }
                                 )
                             } else {
-                                val results = viewModel.searchAll(homeQuery)
-                                if (results.isEmpty()) {
-                                    EmptyState(message = "No matches for \"$homeQuery\"")
+                                // A query on home looks for *folders*, never loose files: this
+                                // screen is a folder picker, so "IMG_2024" finds nothing on purpose
+                                // and a folder name opens straight into its contents.
+                                val matchingFolders = filterAlbumsByName(uiState.albums, homeQuery)
+                                if (matchingFolders.isEmpty()) {
+                                    EmptyState(message = "No folders match \"${homeQuery.trim()}\"")
                                 } else {
-                                    PhotoGrid(
-                                        photos = results,
-                                        selectedIds = emptySet(),
-                                        onPhotoClick = { gridIndex ->
-                                            searchViewerPhotos = results
-                                            viewerIndex = gridIndex
+                                    AlbumGrid(
+                                        albums = matchingFolders,
+                                        newFolders = uiState.newFolders,
+                                        selected = selectedFolders,
+                                        onAlbumClick = { album ->
+                                            if (selectedFolders.isNotEmpty()) {
+                                                selectedFolders = selectedFolders.toggle(album.name)
+                                            } else {
+                                                selectedPhotoIds = emptySet()
+                                                viewModel.openAlbum(album.name)
+                                            }
                                         },
-                                        onPhotoLongClick = {}
+                                        onAlbumLongClick = { album ->
+                                            selectedFolders = selectedFolders + album.name
+                                        }
                                     )
                                 }
                             }
@@ -559,8 +578,7 @@ fun DeviceGalleryScreen(
                 photos = viewerPhotos,
                 startIndex = viewerIndex,
                 title = uiState.selectedAlbum ?: "",
-                onDismiss = { dismissViewer() },
-                onMove = { startMove(listOf(it)) }
+                onDismiss = { dismissViewer() }
             )
         }
     }
@@ -1236,7 +1254,6 @@ private fun DevicePhotoViewer(
     startIndex: Int,
     title: String,
     onDismiss: () -> Unit,
-    onMove: (DevicePhotoRow) -> Unit = {},
     viewModel: DeviceGalleryViewModel = hiltViewModel()
 ) {
     // Drive-PDF style: one continuous vertical feed, every photo full-width back to back,
@@ -1508,13 +1525,6 @@ private fun DevicePhotoViewer(
                             }
                         }
                         photos.getOrNull(currentIndex)?.let { current ->
-                            IconButton(onClick = { onMove(current) }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Folder,
-                                    contentDescription = "Move",
-                                    tint = Color.White
-                                )
-                            }
                             IconButton(onClick = { sharePhotos(context, listOf(current)) }) {
                                 Icon(
                                     imageVector = Icons.Filled.Share,

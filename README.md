@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
-    <img src="https://img.shields.io/badge/Download-VGallery_v1.0.9.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.0.10.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -20,18 +20,18 @@
 ## ✨ Features
 
 - **Reels-style vertical scrolling** ⭐ — the heart of VGallery. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
-- **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure. Each folder card shows its item count and total size, folders are ordered newest-added first with fresh ones raised to the top behind a small green dot until you open them, and a folder's contents always list A–Z.
+- **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure. Each folder card shows its item count and total size, the header totals both and adds how much space the whole thing takes, folders are ordered newest-added first with fresh ones raised to the top behind a small green dot until you open them, and a folder's contents always list A–Z — in *natural* order, so `1(2).png` really does come before `1(10).png`.
 - **Photos & Videos tabs** — home splits the library in two: *Photos* for still images, *Videos* for everything that plays (videos, GIFs and animated WebPs), each as its own folder grid.
 - **Grid or list view** — a toggle next to Delete switches a folder between the thumbnail grid and a line-by-line list showing each file's title and size.
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression. Videos show their poster frame instead of a black box, and start playing only when you tap them. While a video plays, its remaining time counts down in the corner, so how much is left is readable at any moment.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Tap to play** — only the item you tap plays (video, GIF or animated WebP); everything else stays paused to save battery.
-- **Autoplay** ▶️ — the play icon beside the viewer's other actions plays the whole feed hands-free: videos run to their end and stills move on after a moment, each item gliding to the middle of the screen as it is played, until you tap the button again.
+- **Autoplay** ▶️ — the play icon in the full-view feed's top bar plays the whole feed hands-free: videos run to their end and stills move on after a moment, each item gliding to the middle of the screen as it is played, until you tap the button again.
 - **Pinch-to-zoom** — one global pinch scales the whole vertical feed together, photos and videos alike, from 1x up to 10x and anchored under your fingers. While zoomed, drag sideways to pan (clamped so no blank space shows) and drag or fling up and down to keep scrolling through every item — a diagonal drag does both at once. Pinch back to fit to scroll normally again.
-- **Share, delete, search** — system share sheet, global name search from home, long-press multi-select in folders and on home with batch actions.
+- **Share, delete, search** — system share sheet, folder search from home (it finds folders, not loose files — home is where you pick a folder), long-press multi-select in folders and on home with batch actions.
 - **Built-in updates** ⬆️ — the app checks GitHub for a newer release (at most every six hours, and only if you leave it on) and offers *Update now* / *Cancel*. Update now downloads the APK, verifies its checksum and signature, and opens Android's installer without a browser.
 - **Trash** 🗑️ — deleting moves items to a Google-Photos-style Trash instead of wiping them: everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent).
-- **Move to folder** 📁 — pick photos or videos inside a folder and move them into any other folder on the device in one step (long-press to select, or from the full-screen viewer).
+- **Move to folder** 📁 — pick photos or videos inside a folder and move them into any other folder on the device in one step: long-press to start selecting, and the Move action appears with Share, Details and Delete.
 - **Details sheet** — size, resolution, date, folder and type for any photo or selection.
 - **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
 - **Modern feel** — crossfade image loading, animated grids, real-photo album covers.
@@ -40,7 +40,7 @@
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest).
-2. Download **`vgallery_v1.0.9-release.apk`** (under *Assets*).
+2. Download **`vgallery_v1.0.10-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
 
