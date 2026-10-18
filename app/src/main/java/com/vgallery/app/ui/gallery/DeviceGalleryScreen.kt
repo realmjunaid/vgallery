@@ -38,7 +38,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1124,7 +1123,7 @@ private fun FeedVideoItem(
                 Text(
                     text = formatGridDuration(photo.durationMs),
                     color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     style = MaterialTheme.typography.labelSmall.copy(
                         shadow = Shadow(
                             color = Color.Black.copy(alpha = 0.8f),
@@ -1176,9 +1175,9 @@ private fun FeedVideoItem(
                     )
                 }
         )
-        // While this is the item playing, its length counts down in the corner — time left, then
-        // the full length — so the duration can be read at any point instead of only before it
-        // starts or by waiting for the end.
+        // While this is the item playing, the time left counts down in the corner — the length
+        // itself is already on the poster before playback starts, so repeating it here would just
+        // take room away from the picture.
         if (isPlaying) {
             var positionMs by remember { mutableLongStateOf(0L) }
             var reportedMs by remember { mutableLongStateOf(0L) }
@@ -1193,10 +1192,9 @@ private fun FeedVideoItem(
             val totalMs = if (reportedMs > 0L) reportedMs else photo.durationMs
             if (totalMs > 0L) {
                 Text(
-                    text = "${formatGridDuration((totalMs - positionMs).coerceAtLeast(0L))} / " +
-                        formatGridDuration(totalMs),
+                    text = formatGridDuration((totalMs - positionMs).coerceAtLeast(0L)),
                     color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     style = MaterialTheme.typography.labelSmall.copy(
                         shadow = Shadow(
                             color = Color.Black.copy(alpha = 0.8f),
@@ -1496,6 +1494,19 @@ private fun DevicePhotoViewer(
                         }
                     },
                     actions = {
+                        // Autoplay sits with the per-item actions. It is the one that looks
+                        // different while it is on — pause bar in the accent colour — so a feed
+                        // that is walking itself is never a mystery.
+                        if (photos.isNotEmpty()) {
+                            IconButton(onClick = { toggleAutoPlay() }) {
+                                Icon(
+                                    imageVector = if (autoPlay) Icons.Filled.Pause
+                                    else Icons.Filled.PlayArrow,
+                                    contentDescription = if (autoPlay) "Stop autoplay" else "Autoplay",
+                                    tint = if (autoPlay) Violet400 else Color.White
+                                )
+                            }
+                        }
                         photos.getOrNull(currentIndex)?.let { current ->
                             IconButton(onClick = { onMove(current) }) {
                                 Icon(
@@ -1763,45 +1774,6 @@ private fun DevicePhotoViewer(
                         ),
                         modifier = Modifier.padding(horizontal = 56.dp, vertical = 12.dp)
                     )
-                }
-            }
-
-            // Autoplay, in the bottom corner: one small transparent icon, no label, no badge behind
-            // it — the glyph is drawn over a dark copy of itself so it stays readable on a bright
-            // photo. While a run is going it becomes an accent circle with a pause bar, and it
-            // stays when the rest of the chrome is hidden so it can always be stopped.
-            AnimatedVisibility(
-                visible = uiVisible || autoPlay,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 4.dp, bottom = 8.dp)
-            ) {
-                IconButton(
-                    onClick = { toggleAutoPlay() },
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(if (autoPlay) Violet500.copy(alpha = 0.8f) else Color.Transparent)
-                ) {
-                    val glyph = if (autoPlay) Icons.Filled.Pause else Icons.Filled.PlayArrow
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = glyph,
-                            contentDescription = null,
-                            tint = Color.Black.copy(alpha = 0.45f),
-                            modifier = Modifier
-                                .offset(1.dp, 1.dp)
-                                .size(18.dp)
-                        )
-                        Icon(
-                            imageVector = glyph,
-                            contentDescription = if (autoPlay) "Stop autoplay" else "Autoplay",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
                 }
             }
         }
