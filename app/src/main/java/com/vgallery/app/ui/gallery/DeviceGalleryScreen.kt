@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,6 +71,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -96,6 +99,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -129,6 +133,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DevicePhotoRow
+import com.vgallery.app.data.gallery.HomeTab
 import com.vgallery.app.data.gallery.formatBytes
 import com.vgallery.app.data.gallery.formatMediaDate
 import com.vgallery.app.data.gallery.formatResolution
@@ -351,10 +356,20 @@ fun DeviceGalleryScreen(
                     }
                 }
                 uiState.selectedAlbum == null -> {
-                    if (uiState.albums.isEmpty()) {
-                        EmptyState(message = "No media found on this device")
-                    } else {
-                        Column(modifier = Modifier.fillMaxSize()) {
+                    // Tabs stay visible even when a tab has nothing, so an empty Photos
+                    // tab can never trap you away from the Videos tab.
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (isHome) {
+                            HomeTabs(
+                                selected = uiState.selectedTab,
+                                onSelect = { viewModel.selectTab(it) }
+                            )
+                        }
+                        if (uiState.albums.isEmpty()) {
+                            EmptyState(
+                                message = "No ${uiState.selectedTab.label.lowercase()} found on this device"
+                            )
+                        } else {
                             if (showHomeSearch) {
                                 OutlinedTextField(
                                     value = homeQuery,
@@ -362,7 +377,12 @@ fun DeviceGalleryScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    placeholder = { Text("Search all photos", color = TextMuted) },
+                                    placeholder = {
+                                        Text(
+                                            text = "Search all ${uiState.selectedTab.label.lowercase()}",
+                                            color = TextMuted
+                                        )
+                                    },
                                     leadingIcon = {
                                         Icon(Icons.Filled.Search, contentDescription = null, tint = TextMuted)
                                     },
@@ -579,6 +599,55 @@ private fun EmptyState(message: String) {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(text = message, color = TextMuted)
+        }
+    }
+}
+
+private val HomeTab.label: String
+    get() = when (this) {
+        HomeTab.PHOTOS -> "Photos"
+        HomeTab.VIDEOS -> "Videos"
+    }
+
+private val HomeTab.icon: ImageVector
+    get() = when (this) {
+        HomeTab.PHOTOS -> Icons.Filled.PhotoLibrary
+        HomeTab.VIDEOS -> Icons.Filled.Videocam
+    }
+
+/**
+ * Home's two tabs: Photos (still images) and Videos (videos, GIFs, animated WebPs).
+ * Switching happens from the cached scan, so there is no rescan and no spinner.
+ */
+@Composable
+private fun HomeTabs(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
+    TabRow(
+        selectedTabIndex = selected.ordinal,
+        containerColor = Color.Transparent,
+        contentColor = Violet400
+    ) {
+        HomeTab.entries.forEach { tab ->
+            val isSelected = tab == selected
+            Tab(
+                selected = isSelected,
+                onClick = { onSelect(tab) },
+                text = {
+                    Text(
+                        text = tab.label,
+                        fontSize = 14.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                },
+                icon = {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                selectedContentColor = Violet400,
+                unselectedContentColor = TextMuted
+            )
         }
     }
 }

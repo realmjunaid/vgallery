@@ -197,16 +197,6 @@ class DeviceGalleryRepository @Inject constructor(
         }
     }
 
-    /** Folder-wise albums (Google Photos style). Always a fresh scan. */
-    suspend fun loadAlbums(): List<DeviceAlbum> = groupIntoAlbums(loadAllPhotos(fresh = true))
-
-    /** Photos of one album; null/blank/"All" returns everything. Served from cache — instant. */
-    suspend fun loadPhotos(albumName: String?): List<DevicePhotoRow> {
-        val all = loadAllPhotos(fresh = false)
-        if (albumName.isNullOrBlank() || albumName == ALL_PHOTOS_ALBUM) return all
-        return all.filter { (it.bucketName.ifBlank { "Unknown" }) == albumName }
-    }
-
     /** The current in-memory snapshot (for background flag refreshes). */
     fun cachedSnapshot(): List<DevicePhotoRow> = cachedPhotos.orEmpty()
 

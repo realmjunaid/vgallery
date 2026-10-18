@@ -8,7 +8,9 @@ import com.vgallery.app.data.gallery.DeleteResult
 import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DeviceGalleryRepository
 import com.vgallery.app.data.gallery.DevicePhotoRow
+import com.vgallery.app.data.gallery.HomeTab
 import com.vgallery.app.data.gallery.groupIntoAlbums
+import com.vgallery.app.data.gallery.inTab
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,8 +28,11 @@ data class DeviceGalleryUiState(
     val photos: List<DevicePhotoRow> = emptyList(),
     /** null = album list (folder-wise); non-null = inside one folder. */
     val selectedAlbum: String? = null,
+    /** Home tab: Photos (still images) or Videos (videos, GIFs, animated WebPs). */
+    val selectedTab: HomeTab = HomeTab.PHOTOS,
     val isLoading: Boolean = true,
     val hasPermission: Boolean = false,
+    /** Items across the selected tab's albums. */
     val totalCount: Int = 0,
     /** Pull-to-refresh spinner (content stays visible underneath). */
     val isRefreshing: Boolean = false,
@@ -71,19 +76,11 @@ class DeviceGalleryViewModel @Inject constructor(
     }
 
     private suspend fun reload() {
-        val albums = repository.loadAlbums()
-        val total = albums.sumOf { it.count }
-        // Keep the open album in sync (e.g. after a refresh).
-        val selected = _uiState.value.selectedAlbum
-        val photos = if (selected != null) repository.loadPhotos(selected) else emptyList()
+        val rows = repository.loadAllPhotos(fresh = true)
         _uiState.update {
-            it.copy(
-                albums = albums,
-                photos = photos,
-                isLoading = false,
-                isRefreshing = false,
-                totalCount = total,
-                hasPermission = true
+            derive(
+                it.copy(isLoading = false, isRefreshing = false, hasPermission = true),
+                rows
             )
         }
         // Paint first, sniff later: animated-WebP flags upgrade silently in background.
@@ -92,20 +89,31 @@ class DeviceGalleryViewModel @Inject constructor(
 
     private suspend fun refreshAnimatedFlags() {
         val refreshed = repository.sniffAnimatedWebps(repository.cachedSnapshot())
-        val selected = _uiState.value.selectedAlbum
-        _uiState.update {
-            it.copy(
-                albums = groupIntoAlbums(refreshed),
-                photos = if (selected != null) {
-                    refreshed.filter { row ->
-                        (row.bucketName.ifBlank { "Unknown" }) == selected ||
-                            selected == DeviceGalleryRepository.ALL_PHOTOS_ALBUM
-                    }
-                } else {
-                    emptyList()
+        _uiState.update { derive(it, refreshed) }
+    }
+
+    /**
+     * Albums and open-folder rows for [state]'s tab, derived from [rows].
+     *
+     * The tab filters [rows] first, so a folder only ever lists its own tab's media:
+     * Videos = videos + GIFs + animated WebPs, Photos = still images.
+     */
+    private fun derive(state: DeviceGalleryUiState, rows: List<DevicePhotoRow>): DeviceGalleryUiState {
+        val tabRows = rows.filter { it.inTab(state.selectedTab) }
+        val albums = groupIntoAlbums(tabRows)
+        val selected = state.selectedAlbum
+        return state.copy(
+            albums = albums,
+            totalCount = albums.sumOf { it.count },
+            photos = if (selected == null) {
+                emptyList()
+            } else {
+                tabRows.filter { row ->
+                    row.bucketName.ifBlank { "Unknown" } == selected ||
+                        selected == DeviceGalleryRepository.ALL_PHOTOS_ALBUM
                 }
-            )
-        }
+            }
+        )
     }
 
     fun openAlbum(name: String?) {
@@ -117,8 +125,19 @@ class DeviceGalleryViewModel @Inject constructor(
         val instant = _uiState.value.albums.isNotEmpty()
         _uiState.update { it.copy(selectedAlbum = name, isLoading = !instant, searchQuery = "") }
         viewModelScope.launch {
-            val photos = repository.loadPhotos(name)
-            _uiState.update { it.copy(photos = photos, isLoading = false) }
+            val rows = repository.loadAllPhotos(fresh = false)
+            _uiState.update { derive(it.copy(isLoading = false), rows) }
+        }
+    }
+
+    /** Switches the home tab; albums and any open folder re-derive from the cached scan. */
+    fun selectTab(tab: HomeTab) {
+        if (_uiState.value.selectedTab == tab) return
+        _uiState.update {
+            derive(
+                it.copy(selectedTab = tab, selectedAlbum = null, searchQuery = ""),
+                repository.cachedSnapshot()
+            )
         }
     }
 
@@ -184,18 +203,21 @@ class DeviceGalleryViewModel @Inject constructor(
         viewModelScope.launch { reload() }
     }
 
-    /** Rows inside the given folders (for folder share/info/delete). */
+    /** Rows inside the given folders for the selected tab (for folder share/info/delete). */
     fun photosInFolders(names: Set<String>): List<DevicePhotoRow> {
         if (names.isEmpty()) return emptyList()
         val normalized = names.map { it.ifBlank { "Unknown" } }.toSet()
+        val tab = _uiState.value.selectedTab
         return repository.cachedSnapshot()
-            .filter { it.bucketName.ifBlank { "Unknown" } in normalized }
+            .filter { it.bucketName.ifBlank { "Unknown" } in normalized && it.inTab(tab) }
     }
 
-    /** Global name search across every folder (home search icon). */
+    /** Name search across every folder of the selected tab (home search icon). */
     fun searchAll(query: String): List<DevicePhotoRow> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
-        return repository.cachedSnapshot().filter { it.name.contains(q, ignoreCase = true) }
+        val tab = _uiState.value.selectedTab
+        return repository.cachedSnapshot()
+            .filter { it.name.contains(q, ignoreCase = true) && it.inTab(tab) }
     }
 }
