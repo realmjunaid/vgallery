@@ -69,7 +69,10 @@ class DeviceGalleryViewModel @Inject constructor(
     }
 
     fun loadAlbums() {
-        _uiState.update { it.copy(isLoading = true, isRefreshing = false) }
+        // Stale-while-revalidate: a scan that already has folders must not flip isLoading, or the
+        // home grid is replaced by a spinner and its scroll position is lost on the way back.
+        val keepVisible = _uiState.value.albums.isNotEmpty() || repository.cachedSnapshot().isNotEmpty()
+        _uiState.update { it.copy(isLoading = !keepVisible, isRefreshing = false) }
         viewModelScope.launch { reload() }
     }
 

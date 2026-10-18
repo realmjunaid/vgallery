@@ -42,9 +42,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -202,6 +205,26 @@ fun DeviceGalleryScreen(
     var homeQuery by remember { mutableStateOf("") }
     // Folder view mode: the default grid, or a line-by-line list that also shows name and size.
     var listMode by rememberSaveable { mutableStateOf(false) }
+    // One grid state per home tab, owned here — not inside AlbumGrid. Opening a folder removes
+    // that grid from composition; a state created inside it would be thrown away and Back would
+    // land at the top. rememberSaveable also keeps the offset across rotation and process death.
+    val photosAlbumGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+    val videosAlbumGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+    val albumGridState = if (uiState.selectedTab == HomeTab.VIDEOS) {
+        videosAlbumGridState
+    } else {
+        photosAlbumGridState
+    }
+    // Search results are a different, shorter list. Sharing the tab's state would clamp it and
+    // lose the place the user left the real folder grid.
+    val searchAlbumGridState = remember(uiState.selectedTab) { LazyGridState() }
+    // Per open folder, so a full-view overlay (and a rotation) does not throw the grid away.
+    val folderGridState = rememberSaveable(uiState.selectedAlbum, saver = LazyGridState.Saver) {
+        LazyGridState()
+    }
+    val folderListState = rememberSaveable(uiState.selectedAlbum, saver = LazyListState.Saver) {
+        LazyListState()
+    }
     // Shared delete targets (grid, folders, albums) with one confirm dialog.
     var deleteTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
     var infoTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
@@ -430,7 +453,12 @@ fun DeviceGalleryScreen(
                 !uiState.hasPermission && !uiState.isLoading -> PermissionPrompt(
                     onGrant = { permissionLauncher.launch(viewModel.requiredPermissions()) }
                 )
-                uiState.isLoading -> Box(
+                // A refresh must not swap the grid for a spinner: that unmounts it, and even a
+                // remembered scroll state cannot show through an empty frame.
+                uiState.isLoading && (
+                    (uiState.selectedAlbum == null && uiState.albums.isEmpty()) ||
+                        (uiState.selectedAlbum != null && uiState.photos.isEmpty())
+                    ) -> Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
@@ -486,6 +514,7 @@ fun DeviceGalleryScreen(
                                 AlbumGrid(
                                     albums = uiState.albums,
                                     newFolders = uiState.newFolders,
+                                    state = albumGridState,
                                     selected = selectedFolders,
                                     onAlbumClick = { album ->
                                         if (selectedFolders.isNotEmpty()) {
@@ -510,6 +539,7 @@ fun DeviceGalleryScreen(
                                     AlbumGrid(
                                         albums = matchingFolders,
                                         newFolders = uiState.newFolders,
+                                        state = searchAlbumGridState,
                                         selected = selectedFolders,
                                         onAlbumClick = { album ->
                                             if (selectedFolders.isNotEmpty()) {
@@ -552,6 +582,7 @@ fun DeviceGalleryScreen(
                         if (listMode) {
                             MediaList(
                                 photos = visiblePhotos,
+                                state = folderListState,
                                 selectedIds = selectedPhotoIds,
                                 onPhotoClick = onPhotoClick,
                                 onPhotoLongClick = onPhotoLongClick
@@ -559,6 +590,7 @@ fun DeviceGalleryScreen(
                         } else {
                             PhotoGrid(
                                 photos = visiblePhotos,
+                                state = folderGridState,
                                 selectedIds = selectedPhotoIds,
                                 onPhotoClick = onPhotoClick,
                                 onPhotoLongClick = onPhotoLongClick
@@ -771,9 +803,11 @@ internal fun AlbumGrid(
     newFolders: Set<String>,
     onAlbumClick: (DeviceAlbum) -> Unit,
     selected: Set<String>,
-    onAlbumLongClick: (DeviceAlbum) -> Unit
+    onAlbumLongClick: (DeviceAlbum) -> Unit,
+    state: LazyGridState = rememberLazyGridState(),
 ) {
     LazyVerticalGrid(
+        state = state,
         columns = GridCells.Fixed(2),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -862,9 +896,11 @@ internal fun PhotoGrid(
     photos: List<DevicePhotoRow>,
     onPhotoClick: (Int) -> Unit,
     selectedIds: Set<Long>,
-    onPhotoLongClick: (Int) -> Unit
+    onPhotoLongClick: (Int) -> Unit,
+    state: LazyGridState = rememberLazyGridState(),
 ) {
     LazyVerticalGrid(
+        state = state,
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -969,9 +1005,10 @@ internal fun MediaList(
     photos: List<DevicePhotoRow>,
     onPhotoClick: (Int) -> Unit,
     selectedIds: Set<Long>,
-    onPhotoLongClick: (Int) -> Unit
+    onPhotoLongClick: (Int) -> Unit,
+    state: LazyListState = rememberLazyListState(),
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
         itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
             val isSelected = photo.id in selectedIds
             Row(
