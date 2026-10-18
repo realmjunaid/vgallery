@@ -12,7 +12,7 @@ plugins {
 // ─── Release signing ─────────────────────────────────────────────────────────────────────
 // Every release must be signed with the one dedicated release key, so installed apps can
 // update in place. The key and its passwords never live in the repo: each value comes from an
-// VPHOTO_* environment variable, or else from the untracked keystore.properties at the repo
+// VGALLERY_* environment variable, or else from the untracked keystore.properties at the repo
 // root (see README › Releasing). There is deliberately no fallback to the debug key.
 val keystoreProps = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
@@ -21,30 +21,30 @@ val keystoreProps = Properties().apply {
 fun signingValue(key: String, env: String): String? =
     (System.getenv(env) ?: keystoreProps.getProperty(key))?.takeIf { it.isNotBlank() }
 
-val releaseStorePath = signingValue("storeFile", "VPHOTO_KEYSTORE_FILE")
+val releaseStorePath = signingValue("storeFile", "VGALLERY_KEYSTORE_FILE")
 val releaseStoreFile = releaseStorePath?.let {
     if (it.startsWith("~/")) File(System.getProperty("user.home"), it.removePrefix("~/")) else rootProject.file(it)
 }
-val releaseStorePassword = signingValue("storePassword", "VPHOTO_KEYSTORE_PASSWORD")
-val releaseKeyAlias = signingValue("keyAlias", "VPHOTO_KEY_ALIAS")
-val releaseKeyPassword = signingValue("keyPassword", "VPHOTO_KEY_PASSWORD")
+val releaseStorePassword = signingValue("storePassword", "VGALLERY_KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "VGALLERY_KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "VGALLERY_KEY_PASSWORD")
 
 /** What's missing for a release build (checked when a release build runs, not at IDE sync). */
 val missingReleaseSigning: List<String> = buildList {
     when {
-        releaseStoreFile == null -> add("storeFile / VPHOTO_KEYSTORE_FILE")
+        releaseStoreFile == null -> add("storeFile / VGALLERY_KEYSTORE_FILE")
         !releaseStoreFile.isFile -> add("storeFile (not found: $releaseStorePath)")
     }
-    if (releaseStorePassword == null) add("storePassword / VPHOTO_KEYSTORE_PASSWORD")
-    if (releaseKeyAlias == null) add("keyAlias / VPHOTO_KEY_ALIAS")
-    if (releaseKeyPassword == null) add("keyPassword / VPHOTO_KEY_PASSWORD")
+    if (releaseStorePassword == null) add("storePassword / VGALLERY_KEYSTORE_PASSWORD")
+    if (releaseKeyAlias == null) add("keyAlias / VGALLERY_KEY_ALIAS")
+    if (releaseKeyPassword == null) add("keyPassword / VGALLERY_KEY_PASSWORD")
 }
 
-/** Single place for the version: also names the APK file (vphoto_vX.Y.Z.apk). */
+/** Single place for the version: also names the APK file (vgallery_vX.Y.Z.apk). */
 val APP_VERSION_NAME = "1.0.6"
 
 android {
-    namespace = "com.vphoto.app"
+    namespace = "com.vgallery.app"
     compileSdk = 36
 
     signingConfigs {
@@ -57,10 +57,10 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.vphoto.app"
+        applicationId = "com.vgallery.app"
         minSdk = 26
         targetSdk = 36
-        // VPhoto starts fresh: new package identity, first version.
+        // VGallery starts fresh: new package identity, first version.
         // Bump APP_VERSION_NAME (and code) here; the APK file is named from it below.
         versionCode = 7
         versionName = APP_VERSION_NAME
@@ -116,13 +116,13 @@ android {
     }
 }
 
-// APK file name: vphoto_v1.0.2.apk style (from APP_VERSION_NAME above).
+// APK file name: vgallery_v1.0.2.apk style (from APP_VERSION_NAME above).
 // Release builds get a -release suffix so both variants can coexist.
 androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
             val suffix = if (variant.buildType == "release") "-release" else ""
-            (output as VariantOutputImpl).outputFileName.set("vphoto_v$APP_VERSION_NAME$suffix.apk")
+            (output as VariantOutputImpl).outputFileName.set("vgallery_v$APP_VERSION_NAME$suffix.apk")
         }
     }
 }
@@ -137,7 +137,7 @@ val validateReleaseSigning by tasks.registering {
         if (missing.isNotEmpty()) {
             throw GradleException(
                 "Release signing is not configured (missing: ${missing.joinToString()}). " +
-                    "Add keystore.properties or VPHOTO_* env vars; see README › Releasing. " +
+                    "Add keystore.properties or VGALLERY_* env vars; see README › Releasing. " +
                     "Release builds are never signed with the debug key."
             )
         }
