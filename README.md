@@ -19,7 +19,7 @@
 ## ✨ Features
 
 - **Reels-style vertical scrolling** ⭐ — the heart of VGallery. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
-- **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure.
+- **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure. Each folder card shows its item count and total size, folders are ordered newest-added first with fresh ones raised to the top behind a small green dot until you open them, and a folder's contents always list A–Z.
 - **Photos & Videos tabs** — home splits the library in two: *Photos* for still images, *Videos* for everything that plays (videos, GIFs and animated WebPs), each as its own folder grid.
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.

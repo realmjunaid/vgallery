@@ -61,6 +61,8 @@ class AppPreferences @Inject constructor(
         val LANDSCAPE_VIDEO_MODE = booleanPreferencesKey("landscape_video_mode")
         val RECENT_FOLDERS = stringPreferencesKey("recent_folders")
         val TRASHED_MEDIA = stringPreferencesKey("trashed_media")
+        val NEW_FOLDERS = stringSetPreferencesKey("new_folders")
+        val KNOWN_FOLDERS = stringSetPreferencesKey("known_folders")
     }
 
     /** The stored preferences; an `IOException` while reading yields empty preferences (defaults). */
@@ -98,6 +100,16 @@ class AppPreferences @Inject constructor(
     /** Trashed items, oldest first (insertion order preserved by the store). */
     val trashedMedia: Flow<List<TrashedItem>> = data.map { prefs ->
         decodeTrashList(prefs[Keys.TRASHED_MEDIA] ?: "")
+    }
+
+    /** Folder names flagged "new" (detected on the device but never opened); drives the green dot. */
+    val newFolders: Flow<Set<String>> = data.map { prefs ->
+        prefs[Keys.NEW_FOLDERS] ?: emptySet()
+    }
+
+    /** Folder names seen at least once: the baseline for spotting folders added later. */
+    val knownFolders: Flow<Set<String>> = data.map { prefs ->
+        prefs[Keys.KNOWN_FOLDERS] ?: emptySet()
     }
 
     /** Runs an edit; returns `false` (and changes nothing) if storage fails. */
@@ -224,6 +236,20 @@ class AppPreferences @Inject constructor(
 
     /** Clears the entire trash list. */
     suspend fun clearTrash(): Boolean = safeEdit { it[Keys.TRASHED_MEDIA] = "" }
+
+    // ── New-folder markers ────────────────────────────────────────────────────────────────
+
+    /** Stores the reconciled folder markers after a scan. */
+    suspend fun updateFolderMarkers(known: Set<String>, flagged: Set<String>): Boolean = safeEdit { prefs ->
+        prefs[Keys.KNOWN_FOLDERS] = known
+        prefs[Keys.NEW_FOLDERS] = flagged
+    }
+
+    /** Marks [name] as opened: drops its "new folder" flag, keeping it known. */
+    suspend fun clearNewFolder(name: String): Boolean = safeEdit { prefs ->
+        val flagged = prefs[Keys.NEW_FOLDERS] ?: emptySet()
+        if (name in flagged) prefs[Keys.NEW_FOLDERS] = flagged - name
+    }
 }
 
 data class RecentFolderInfo(

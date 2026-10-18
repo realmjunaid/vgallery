@@ -147,6 +147,7 @@ import com.vgallery.app.data.gallery.formatResolution
 import com.vgallery.app.data.gallery.hasDeviceGalleryPermission
 import com.vgallery.app.ui.theme.Black
 import com.vgallery.app.ui.theme.ErrorRed
+import com.vgallery.app.ui.theme.NewFolderDot
 import com.vgallery.app.ui.theme.SurfaceVariant
 import com.vgallery.app.ui.theme.TextDisabled
 import com.vgallery.app.ui.theme.TextMuted
@@ -439,6 +440,7 @@ fun DeviceGalleryScreen(
                             if (homeQuery.isBlank()) {
                                 AlbumGrid(
                                     albums = uiState.albums,
+                                    newFolders = uiState.newFolders,
                                     selected = selectedFolders,
                                     onAlbumClick = { album ->
                                         if (selectedFolders.isNotEmpty()) {
@@ -710,6 +712,7 @@ private fun HomeTabs(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
 @Composable
 private fun AlbumGrid(
     albums: List<DeviceAlbum>,
+    newFolders: Set<String>,
     onAlbumClick: (DeviceAlbum) -> Unit,
     selected: Set<String>,
     onAlbumLongClick: (DeviceAlbum) -> Unit
@@ -738,17 +741,30 @@ private fun AlbumGrid(
                     )
                     .padding(12.dp)
             ) {
-                StaticGalleryImage(
-                    uri = album.coverUri,
-                    isVideo = album.coverIsVideo,
-                    contentDescription = album.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1.4f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color.DarkGray)
-                )
+                Box {
+                    StaticGalleryImage(
+                        uri = album.coverUri,
+                        isVideo = album.coverIsVideo,
+                        contentDescription = album.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1.4f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.DarkGray)
+                    )
+                    // A folder added since the last scan carries a green dot until it is opened.
+                    if (album.name in newFolders) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(NewFolderDot)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -768,7 +784,17 @@ private fun AlbumGrid(
                         modifier = Modifier.weight(1f)
                     )
                 }
-                Text(text = "${album.count} items", color = TextMuted, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "${album.count} items", color = TextMuted, fontSize = 12.sp)
+                    if (album.sizeBytes > 0L) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = formatBytes(album.sizeBytes),
+                            color = TextMuted.copy(alpha = 0.7f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
             }
         }
     }

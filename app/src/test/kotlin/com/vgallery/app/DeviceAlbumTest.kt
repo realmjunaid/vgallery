@@ -2,9 +2,11 @@ package com.vgallery.app
 
 import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DevicePhotoRow
 import com.vgallery.app.data.gallery.groupIntoAlbums
 import com.vgallery.app.data.gallery.isAnimatedWebpHeader
+import com.vgallery.app.data.gallery.sortAlbumsForHome
 import com.vgallery.app.data.gallery.sortDevicePhotos
 import com.vgallery.app.data.preferences.SortOrder
 import org.junit.Assert.assertEquals
@@ -100,5 +102,38 @@ class DeviceAlbumTest {
         assertEquals(listOf(2L, 3L, 1L), newestFirst)
         val smallestFirst = sortDevicePhotos(rows, SortOrder.SIZE_SMALLEST).map { it.id }
         assertEquals(listOf(1L, 3L, 2L), smallestFirst)
+    }
+
+    @Test
+    fun albums_sumSizesAndSortByDateAdded() {
+        val rows = listOf(
+            DevicePhotoRow(1, Uri.parse("content://m/1"), "a.jpg", "Camera", 5000L, 1_000_000L, dateAdded = 100L),
+            DevicePhotoRow(2, Uri.parse("content://m/2"), "b.jpg", "Camera", 4000L, 2_000_000L, dateAdded = 300L),
+            DevicePhotoRow(3, Uri.parse("content://m/3"), "c.jpg", "Download", 6000L, 500L, dateAdded = 200L),
+        )
+        val albums = groupIntoAlbums(rows).associateBy { it.name }
+        assertEquals(3_000_000L, albums.getValue("Camera").sizeBytes)
+        assertEquals(500L, albums.getValue("Download").sizeBytes)
+        // Sort key is DATE_ADDED, so Camera (300) leads Download (200) despite the newer modified date.
+        assertEquals(listOf("Camera", "Download"), groupIntoAlbums(rows).map { it.name })
+        assertEquals(300L, albums.getValue("Camera").dateAdded)
+    }
+
+    @Test
+    fun homeSort_putsNewFoldersFirstThenNewestAdded() {
+        fun album(name: String, added: Long) =
+            DeviceAlbum(name, 1, Uri.parse("content://m/$name"), dateAdded = added)
+
+        val albums = listOf(album("Old", 100L), album("Fresh", 50L), album("Newest", 900L))
+        // A flagged folder always leads, even though it is the oldest by date added.
+        assertEquals(
+            listOf("Fresh", "Newest", "Old"),
+            sortAlbumsForHome(albums, newFolders = setOf("Fresh")).map { it.name }
+        )
+        // With nothing flagged it is plain "newest date added first".
+        assertEquals(
+            listOf("Newest", "Old", "Fresh"),
+            sortAlbumsForHome(albums, newFolders = emptySet()).map { it.name }
+        )
     }
 }

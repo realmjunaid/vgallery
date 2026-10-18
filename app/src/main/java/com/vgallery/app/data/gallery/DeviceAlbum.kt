@@ -9,7 +9,11 @@ data class DeviceAlbum(
     val count: Int,
     val coverUri: Uri,
     val latestDateModified: Long = 0L,
-    val coverIsVideo: Boolean = false
+    val coverIsVideo: Boolean = false,
+    /** Sum of every item's size, shown small next to the item count on home. */
+    val sizeBytes: Long = 0L,
+    /** Newest DATE_ADDED in the folder: the home sort key (date added, not modified). */
+    val dateAdded: Long = 0L
 )
 
 /** One image row from MediaStore. Pure data so grouping is unit-testable. */
@@ -24,7 +28,9 @@ data class DevicePhotoRow(
     val durationMs: Long = 0L,
     val isAnimatedWebp: Boolean = false,
     val width: Int = 0,
-    val height: Int = 0
+    val height: Int = 0,
+    /** MediaStore DATE_ADDED in milliseconds; 0 when the column was unavailable. */
+    val dateAdded: Long = 0L
 ) {
     /** GIF always animates; WebP may be animated — both decode cheaper for smooth playback. */
     val needsLightDecode: Boolean
@@ -77,20 +83,35 @@ fun sortDevicePhotos(rows: List<DevicePhotoRow>, order: SortOrder): List<DeviceP
 /**
  * Groups flat MediaStore rows into albums (folder-wise).
  * One album per [DevicePhotoRow.bucketName], cover = latest photo.
- * Sorted by latest photo first, so Camera/DCIM surface at the top like Google Photos.
+ * Sorted newest-added first, so freshly created folders surface at the top.
  */
 fun groupIntoAlbums(rows: List<DevicePhotoRow>): List<DeviceAlbum> {
     if (rows.isEmpty()) return emptyList()
     return rows.groupBy { it.bucketName.ifBlank { "Unknown" } }
         .map { (bucket, photos) ->
             val latest = photos.maxByOrNull { it.dateModified }
+            val added = photos.maxOfOrNull { it.dateAdded } ?: 0L
             DeviceAlbum(
                 name = bucket,
                 count = photos.size,
                 coverUri = latest?.uri ?: photos.first().uri,
                 latestDateModified = latest?.dateModified ?: 0L,
-                coverIsVideo = latest?.isVideo ?: false
+                coverIsVideo = latest?.isVideo ?: false,
+                sizeBytes = photos.sumOf { it.size },
+                // DATE_ADDED can be missing on some providers; the latest date works just as well.
+                dateAdded = added.takeIf { it > 0L } ?: (latest?.dateModified ?: 0L)
             )
         }
-        .sortedByDescending { it.latestDateModified }
+        .sortedByDescending { it.dateAdded }
 }
+
+/**
+ * Home ordering: folders flagged "new" ([newFolders], never opened) always sit first, then the
+ * rest newest-date-added first, name as a stable tie-break.
+ */
+fun sortAlbumsForHome(albums: List<DeviceAlbum>, newFolders: Set<String>): List<DeviceAlbum> =
+    albums.sortedWith(
+        compareByDescending<DeviceAlbum> { it.name in newFolders }
+            .thenByDescending { it.dateAdded }
+            .thenBy { it.name.lowercase() }
+    )

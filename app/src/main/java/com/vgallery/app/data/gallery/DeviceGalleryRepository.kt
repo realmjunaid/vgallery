@@ -87,9 +87,32 @@ class DeviceGalleryRepository @Inject constructor(
         val sorted = sortDevicePhotos(rows, appPreferences.settings.first().sortOrder)
         // Hide anything sitting in the Trash until it is restored or permanently deleted.
         val trashed = appPreferences.trashedMedia.first().map { it.uri }.toSet()
-        filterTrashed(sorted, trashed)
-            .also { cachedPhotos = it }
+        val visible = filterTrashed(sorted, trashed)
+        // A fresh scan also spots folders added since last time (the home green dot).
+        refreshFolderMarkers(visible)
+        cachedPhotos = visible
+        visible
     }
+
+    /**
+     * Reconciles the device's folder names with the persisted markers. The first scan only
+     * seeds the baseline (no dots); later scans flag folders that were not there before.
+     */
+    private suspend fun refreshFolderMarkers(rows: List<DevicePhotoRow>) {
+        val names = rows.map { it.bucketName.ifBlank { "Unknown" } }.toSet()
+        val state = FolderMarkerState(
+            known = appPreferences.knownFolders.first(),
+            flagged = appPreferences.newFolders.first()
+        )
+        val next = reconcileFolderMarkers(names, state)
+        if (next != state) appPreferences.updateFolderMarkers(next.known, next.flagged)
+    }
+
+    /** Folder names currently flagged "new" (never opened): the home green dot. */
+    suspend fun newFolderNames(): Set<String> = appPreferences.newFolders.first()
+
+    /** Marks a folder opened, clearing its "new" dot. */
+    suspend fun markFolderOpened(name: String): Boolean = appPreferences.clearNewFolder(name)
 
     private fun loadImages(rows: MutableList<DevicePhotoRow>) {
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -98,6 +121,7 @@ class DeviceGalleryRepository @Inject constructor(
             MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Images.Media.DATE_MODIFIED,
+            MediaStore.Images.Media.DATE_ADDED,
             MediaStore.Images.Media.SIZE,
             MediaStore.Images.Media.MIME_TYPE,
             MediaStore.Images.Media.WIDTH,
@@ -110,6 +134,7 @@ class DeviceGalleryRepository @Inject constructor(
                 val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
                 val bucketCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
                 val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+                val addedCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
                 val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
                 val widthCol = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
@@ -128,7 +153,8 @@ class DeviceGalleryRepository @Inject constructor(
                             size = try { cursor.getLong(sizeCol) } catch (_: Exception) { 0L },
                             mimeType = mime,
                             width = if (widthCol >= 0) try { cursor.getInt(widthCol) } catch (_: Exception) { 0 } else 0,
-                            height = if (heightCol >= 0) try { cursor.getInt(heightCol) } catch (_: Exception) { 0 } else 0
+                            height = if (heightCol >= 0) try { cursor.getInt(heightCol) } catch (_: Exception) { 0 } else 0,
+                            dateAdded = if (addedCol >= 0) try { cursor.getLong(addedCol) * 1000L } catch (_: Exception) { 0L } else 0L
                         )
                     )
                 }
@@ -147,6 +173,7 @@ class DeviceGalleryRepository @Inject constructor(
             MediaStore.Video.Media.DISPLAY_NAME,
             MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Video.Media.DATE_MODIFIED,
+            MediaStore.Video.Media.DATE_ADDED,
             MediaStore.Video.Media.SIZE,
             MediaStore.Video.Media.MIME_TYPE,
             MediaStore.Video.Media.DURATION,
@@ -160,6 +187,7 @@ class DeviceGalleryRepository @Inject constructor(
                 val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
                 val bucketCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
                 val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
+                val addedCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
                 val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
                 val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
@@ -179,7 +207,8 @@ class DeviceGalleryRepository @Inject constructor(
                             mimeType = cursor.getString(mimeCol) ?: "video/*",
                             durationMs = try { cursor.getLong(durationCol) } catch (_: Exception) { 0L },
                             width = if (widthCol >= 0) try { cursor.getInt(widthCol) } catch (_: Exception) { 0 } else 0,
-                            height = if (heightCol >= 0) try { cursor.getInt(heightCol) } catch (_: Exception) { 0 } else 0
+                            height = if (heightCol >= 0) try { cursor.getInt(heightCol) } catch (_: Exception) { 0 } else 0,
+                            dateAdded = if (addedCol >= 0) try { cursor.getLong(addedCol) * 1000L } catch (_: Exception) { 0L } else 0L
                         )
                     )
                 }

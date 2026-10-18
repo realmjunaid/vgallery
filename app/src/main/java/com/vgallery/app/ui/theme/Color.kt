@@ -27,6 +27,9 @@ val ErrorRed = Color(0xFFE5E5E5)
 val SuccessGreen = Color(0xFFE5E5E5)
 val WarningAmber = Color(0xFFE5E5E5)
 
+// "New folder" marker: the one deliberate splash of colour in the monochrome UI.
+val NewFolderDot = Color(0xFF34C759)
+
 // Overlay
 val OverlayBlack = Color(0x80000000)
 val OverlayGradientTop = Color(0xB3000000)

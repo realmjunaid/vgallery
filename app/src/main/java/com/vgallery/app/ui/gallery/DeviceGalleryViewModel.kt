@@ -12,6 +12,9 @@ import com.vgallery.app.data.gallery.MoveResult
 import com.vgallery.app.data.gallery.TrashedItem
 import com.vgallery.app.data.gallery.groupIntoAlbums
 import com.vgallery.app.data.gallery.inTab
+import com.vgallery.app.data.gallery.sortAlbumsForHome
+import com.vgallery.app.data.gallery.sortDevicePhotos
+import com.vgallery.app.data.preferences.SortOrder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,6 +38,8 @@ data class DeviceGalleryUiState(
     val hasPermission: Boolean = false,
     /** Items across the selected tab's albums. */
     val totalCount: Int = 0,
+    /** Folders detected on the device but never opened yet: the home green dot. */
+    val newFolders: Set<String> = emptySet(),
     /** Pull-to-refresh spinner (content stays visible underneath). */
     val isRefreshing: Boolean = false,
     /** Name filter inside the open album. */
@@ -78,9 +83,15 @@ class DeviceGalleryViewModel @Inject constructor(
 
     private suspend fun reload() {
         val rows = repository.loadAllPhotos(fresh = true)
-        _uiState.update {
+        val newFolders = repository.newFolderNames()
+        _uiState.update { state ->
             derive(
-                it.copy(isLoading = false, isRefreshing = false, hasPermission = true),
+                state.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    hasPermission = true,
+                    newFolders = newFolders
+                ),
                 rows
             )
         }
@@ -101,7 +112,8 @@ class DeviceGalleryViewModel @Inject constructor(
      */
     private fun derive(state: DeviceGalleryUiState, rows: List<DevicePhotoRow>): DeviceGalleryUiState {
         val tabRows = rows.filter { it.inTab(state.selectedTab) }
-        val albums = groupIntoAlbums(tabRows)
+        // Home folders: new ones first, then newest date added (the green dot comes from state).
+        val albums = sortAlbumsForHome(groupIntoAlbums(tabRows), state.newFolders)
         val selected = state.selectedAlbum
         return state.copy(
             albums = albums,
@@ -109,23 +121,42 @@ class DeviceGalleryViewModel @Inject constructor(
             photos = if (selected == null) {
                 emptyList()
             } else {
-                tabRows.filter { row ->
-                    row.bucketName.ifBlank { "Unknown" } == selected ||
-                        selected == DeviceGalleryRepository.ALL_PHOTOS_ALBUM
-                }
+                // Inside a folder the items are always A–Z, whatever the viewer's sort setting is.
+                sortDevicePhotos(
+                    tabRows.filter { row ->
+                        row.bucketName.ifBlank { "Unknown" } == selected ||
+                            selected == DeviceGalleryRepository.ALL_PHOTOS_ALBUM
+                    },
+                    SortOrder.NAME_ASC
+                )
             }
         )
     }
 
     fun openAlbum(name: String?) {
         if (name == null) {
-            _uiState.update { it.copy(selectedAlbum = null, photos = emptyList(), searchQuery = "") }
+            // Back to the folders: re-order now that an opened folder may have lost its flag.
+            _uiState.update {
+                derive(
+                    it.copy(selectedAlbum = null, photos = emptyList(), searchQuery = ""),
+                    repository.cachedSnapshot()
+                )
+            }
             return
         }
         // Cache is warm after the first scan: open instantly, no loading flash.
         val instant = _uiState.value.albums.isNotEmpty()
-        _uiState.update { it.copy(selectedAlbum = name, isLoading = !instant, searchQuery = "") }
+        // Opening a folder clears its "new" dot: drop it from state now, persist in the background.
+        _uiState.update {
+            it.copy(
+                selectedAlbum = name,
+                isLoading = !instant,
+                searchQuery = "",
+                newFolders = it.newFolders - name
+            )
+        }
         viewModelScope.launch {
+            repository.markFolderOpened(name)
             val rows = repository.loadAllPhotos(fresh = false)
             _uiState.update { derive(it.copy(isLoading = false), rows) }
         }
