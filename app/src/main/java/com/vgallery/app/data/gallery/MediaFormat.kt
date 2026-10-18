@@ -19,6 +19,15 @@ internal fun formatBytes(bytes: Long): String {
 internal fun formatResolution(width: Int, height: Int): String =
     if (width > 0 && height > 0) "$width × $height" else "—"
 
+/**
+ * The line under "VGallery" on home: "1,204 items • 38 folders • 12.4 GB". The total size is left
+ * out rather than shown as a dash when the device reports none.
+ */
+internal fun homeSummary(items: Int, folders: Int, totalBytes: Long): String {
+    val base = "$items items • $folders folders"
+    return if (totalBytes > 0L) "$base • ${formatBytes(totalBytes)}" else base
+}
+
 /** "12 May 2025, 14:30" style timestamps for the info sheet. */
 internal fun formatMediaDate(epochSeconds: Long): String {
     if (epochSeconds <= 0) return "—"

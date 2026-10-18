@@ -4,8 +4,10 @@ import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DevicePhotoRow
+import com.vgallery.app.data.gallery.filterAlbumsByName
 import com.vgallery.app.data.gallery.groupIntoAlbums
 import com.vgallery.app.data.gallery.isAnimatedWebpHeader
+import com.vgallery.app.data.gallery.naturalCompare
 import com.vgallery.app.data.gallery.sortAlbumsForHome
 import com.vgallery.app.data.gallery.sortDevicePhotos
 import com.vgallery.app.data.preferences.SortOrder
@@ -135,5 +137,75 @@ class DeviceAlbumTest {
             listOf("Newest", "Old", "Fresh"),
             sortAlbumsForHome(albums, newFolders = emptySet()).map { it.name }
         )
+    }
+
+    @Test
+    fun sort_nameAsc_readsNumbersInsideANameAsNumbers() {
+        // The reported case: a folder of clones named "1(1).png" … "1(101).png" listed as
+        // 1(1), 1(10), 1(100), 1(101), 1(11) — text order, not file order.
+        val names = listOf(
+            "1(10).png", "1(2).png", "1(101).png", "1(1).png", "1(11).png", "1(100).png"
+        )
+        val rows = names.mapIndexed { index, name ->
+            DevicePhotoRow(
+                id = index.toLong() + 1,
+                uri = Uri.parse("content://m/$index"),
+                name = name,
+                bucketName = "C",
+                dateModified = 1000L,
+                size = 10L
+            )
+        }
+        assertEquals(
+            listOf("1(1).png", "1(2).png", "1(10).png", "1(11).png", "1(100).png", "1(101).png"),
+            sortDevicePhotos(rows, SortOrder.NAME_ASC).map { it.name }
+        )
+        // And the reverse order is exactly that, reversed.
+        assertEquals(
+            listOf("1(101).png", "1(100).png", "1(11).png", "1(10).png", "1(2).png", "1(1).png"),
+            sortDevicePhotos(rows, SortOrder.NAME_DESC).map { it.name }
+        )
+    }
+
+    @Test
+    fun naturalCompare_ordersNumberedAndPlainNames() {
+        // Numbers inside a name win over the surrounding text.
+        assertTrue(naturalCompare("1(2).png", "1(10).png") < 0)
+        assertTrue(naturalCompare("IMG2.jpg", "IMG10.jpg") < 0)
+        assertTrue(naturalCompare("Screenshot (9).png", "Screenshot (10).png") < 0)
+        // Letters are still compared case-insensitively.
+        assertTrue(naturalCompare("A.jpg", "b.jpg") < 0)
+        assertTrue(naturalCompare("b.jpg", "A.jpg") > 0)
+        // Leading zeros are the same number, and the exact text settles such a pair.
+        assertTrue(naturalCompare("IMG007.jpg", "IMG7.jpg") != 0)
+        assertEquals(naturalCompare("IMG7.jpg", "IMG7.jpg"), 0)
+        // A name that is a prefix of another comes first.
+        assertTrue(naturalCompare("IMG", "IMG1.jpg") < 0)
+        // Same letters and numbers, different case: decided, not left to chance.
+        assertTrue(naturalCompare("IMG1.jpg", "img1.jpg") != 0)
+        // Every pair has a direction: sorting a shuffled pile is stable and repeatable.
+        val pile = listOf("10.png", "2.png", "A.png", "a10.png", "1.png", "01.png")
+        assertEquals(
+            pile.sortedWith { a, b -> naturalCompare(a, b) },
+            pile.sortedWith { a, b -> naturalCompare(a, b) }
+        )
+    }
+
+    @Test
+    fun filterAlbumsByName_returnsFoldersAndNeverFiles() {
+        fun album(name: String) = DeviceAlbum(name, 1, Uri.parse("content://m/$name"))
+
+        val albums = listOf(album("Camera"), album("Screenshots"), album("WhatsApp Images"))
+        // Case-insensitive, matches anywhere in the folder name.
+        assertEquals(listOf("Camera"), filterAlbumsByName(albums, "cam").map { it.name })
+        assertEquals(listOf("Camera"), filterAlbumsByName(albums, " CAMERA ").map { it.name })
+        assertEquals(
+            listOf("Screenshots", "WhatsApp Images"),
+            filterAlbumsByName(albums, "s").map { it.name }
+        )
+        // A file name is not a folder name: nothing to show, and the screen says so.
+        assertTrue(filterAlbumsByName(albums, "IMG_2024.jpg").isEmpty())
+        // Blank query = every folder, untouched, in the order it came in.
+        assertEquals(albums, filterAlbumsByName(albums, "   "))
     }
 }

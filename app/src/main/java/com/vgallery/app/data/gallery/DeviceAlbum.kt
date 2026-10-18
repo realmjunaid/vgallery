@@ -68,8 +68,10 @@ fun isAnimatedWebpHeader(header: ByteArray): Boolean {
  */
 fun sortDevicePhotos(rows: List<DevicePhotoRow>, order: SortOrder): List<DevicePhotoRow> =
     when (order) {
-        SortOrder.NAME_ASC -> rows.sortedBy { it.name.lowercase() }
-        SortOrder.NAME_DESC -> rows.sortedByDescending { it.name.lowercase() }
+        // A–Z is [naturalCompare], so the numbers inside a name decide their own order: a folder of
+        // `1(2), 1(10), 1(100)` lists as 1(2), then 1(10), then 1(100) instead of text order.
+        SortOrder.NAME_ASC -> rows.sortedWith { a, b -> naturalCompare(a.name, b.name) }
+        SortOrder.NAME_DESC -> rows.sortedWith { a, b -> naturalCompare(b.name, a.name) }
         SortOrder.DATE_NEWEST -> rows.sortedByDescending { it.dateModified }
         SortOrder.DATE_OLDEST -> rows.sortedBy { it.dateModified }
         SortOrder.SIZE_LARGEST -> rows.sortedByDescending { it.size }
@@ -113,5 +115,17 @@ fun sortAlbumsForHome(albums: List<DeviceAlbum>, newFolders: Set<String>): List<
     albums.sortedWith(
         compareByDescending<DeviceAlbum> { it.name in newFolders }
             .thenByDescending { it.dateAdded }
-            .thenBy { it.name.lowercase() }
+            // Same natural ordering as a folder's contents, so "Screenshot (2)" leads "(10)".
+            .then(Comparator { a, b -> naturalCompare(a.name, b.name) })
     )
+
+/**
+ * Home search: the folders whose name contains [query], case-insensitively, in the order they were
+ * given. Home is a folder picker — a query there means "where is that folder" — so files never
+ * appear in the results. A blank query returns every folder untouched.
+ */
+fun filterAlbumsByName(albums: List<DeviceAlbum>, query: String): List<DeviceAlbum> {
+    val trimmed = query.trim()
+    if (trimmed.isEmpty()) return albums
+    return albums.filter { it.name.contains(trimmed, ignoreCase = true) }
+}
