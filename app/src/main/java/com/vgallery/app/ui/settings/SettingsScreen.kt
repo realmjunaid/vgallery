@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +37,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -51,7 +55,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vgallery.app.BuildConfig
+import com.vgallery.app.ui.update.UpdateViewModel
+import com.vgallery.app.ui.update.updateStateSummary
 import com.vgallery.app.ui.theme.Black
 import com.vgallery.app.ui.theme.SurfaceElevated
 import com.vgallery.app.ui.theme.SurfaceVariant
@@ -66,14 +74,41 @@ import com.vgallery.app.ui.theme.Violet500
 private enum class AboutPage { APP, DEVELOPER }
 
 /**
- * Settings, deliberately down to the one thing that is actually useful here: the app's own
- * About pages. Every playback preference the app ships with is chosen for the common case, so
- * there is nothing to tune — see [com.vgallery.app.data.preferences.AppPreferences] for the
- * stored defaults that the rest of the app still reads.
+ * Settings: the updater, then the app's own About pages. Every playback preference the app ships
+ * with is chosen for the common case, so there is nothing to tune — see
+ * [com.vgallery.app.data.preferences.AppPreferences] for the stored defaults the rest of the app
+ * still reads.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(
+    onBack: () -> Unit,
+    viewModel: UpdateViewModel = hiltViewModel(),
+) {
+    val updateState by viewModel.state.collectAsStateWithLifecycle()
+    val autoCheck by viewModel.autoCheckEnabled.collectAsStateWithLifecycle()
+    SettingsScreen(
+        onBack = onBack,
+        updateSummary = updateStateSummary(updateState, viewModel.currentVersionName),
+        autoCheckEnabled = autoCheck,
+        onCheckNow = viewModel::checkNow,
+        onAutoCheckChange = viewModel::setAutoCheckEnabled,
+    )
+}
+
+/**
+ * The screen itself, with everything hoisted: the Settings destination fills it from the updater,
+ * and tests drive it with plain values.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    onBack: () -> Unit,
+    updateSummary: String,
+    autoCheckEnabled: Boolean,
+    onCheckNow: () -> Unit,
+    onAutoCheckChange: (Boolean) -> Unit,
+) {
     var page by remember { mutableStateOf<AboutPage?>(null) }
 
     // Back inside an About page returns to Settings instead of leaving it.
@@ -115,7 +150,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                 .padding(horizontal = 16.dp)
         ) {
             when (page) {
-                null -> SettingsMenu(onOpen = { page = it })
+                null -> SettingsMenu(
+                    updateSummary = updateSummary,
+                    autoCheckEnabled = autoCheckEnabled,
+                    onCheckNow = onCheckNow,
+                    onAutoCheckChange = onAutoCheckChange,
+                    onOpen = { page = it }
+                )
                 AboutPage.APP -> AboutAppPage()
                 AboutPage.DEVELOPER -> AboutDeveloperPage()
             }
@@ -147,7 +188,34 @@ fun SettingsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun SettingsMenu(onOpen: (AboutPage) -> Unit) {
+private fun SettingsMenu(
+    updateSummary: String,
+    autoCheckEnabled: Boolean,
+    onCheckNow: () -> Unit,
+    onAutoCheckChange: (Boolean) -> Unit,
+    onOpen: (AboutPage) -> Unit,
+) {
+    SettingsSectionHeader("Updates")
+
+    SettingsCard {
+        SettingsClickItem(
+            icon = Icons.Filled.Update,
+            title = "Check for updates",
+            subtitle = updateSummary,
+            onClick = onCheckNow
+        )
+
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+
+        SettingsSwitchItem(
+            icon = Icons.Filled.Autorenew,
+            title = "Automatic update check",
+            subtitle = "Asks GitHub for a new release when the app opens",
+            checked = autoCheckEnabled,
+            onCheckedChange = onAutoCheckChange
+        )
+    }
+
     SettingsSectionHeader("About")
 
     SettingsCard {
@@ -224,6 +292,13 @@ private fun AboutAppPage() {
             body = "Deleting goes to a Google Photos style Trash first, restorable for 30 days. " +
                 "Items can also be moved to another folder without leaving the app."
         )
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        AboutBullet(
+            icon = Icons.Filled.Update,
+            title = "Updates from inside the app",
+            body = "When a new release is out, VGallery says so and can download and install it " +
+                "without a browser. Android asks for one confirmation before installing."
+        )
     }
 
     SettingsSectionHeader("Privacy")
@@ -231,9 +306,11 @@ private fun AboutAppPage() {
     SettingsCard {
         AboutBullet(
             icon = Icons.Filled.WifiOff,
-            title = "Works fully offline",
-            body = "VGallery has no internet permission at all, so nothing can be uploaded. " +
-                "There is no account, no ad and no tracker."
+            title = "Online for updates only",
+            body = "The only network call VGallery makes is the update check: it asks GitHub for " +
+                "the newest release tag and, if you tap Update now, downloads that APK. No photo, " +
+                "file name or identifier is ever sent, and there is no account, ad or analytics. " +
+                "Turn off Automatic update check and the app makes no network call at all."
         )
         HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
         AboutBullet(
@@ -369,6 +446,56 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
         colors = CardDefaults.cardColors(containerColor = SurfaceVariant)
     ) {
         Column(content = content)
+    }
+}
+
+@Composable
+private fun SettingsSwitchItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Violet400,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextPrimary
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Black,
+                checkedTrackColor = Violet500,
+                checkedBorderColor = Violet500,
+                uncheckedThumbColor = TextSecondary,
+                uncheckedTrackColor = SurfaceElevated,
+                uncheckedBorderColor = TextDisabled
+            )
+        )
     }
 }
 

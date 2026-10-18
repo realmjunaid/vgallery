@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The only path this app ever exposes to another app: the updater's own cache folder, which holds
+  the downloaded (and signature-verified) release APK while Android's package installer reads it.
+  Nothing else on the device, and no user media, is reachable through the provider.
+-->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

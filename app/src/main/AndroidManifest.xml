@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Fully offline gallery: only local photo/video access, no INTERNET, no installs. -->
+    <!--
+      Permissions stay narrow: local media access, the write consent Android 10 needs for deletes,
+      the single HTTPS call that checks for a new release, and handing that APK to the installer.
+    -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -9,6 +12,15 @@
     <!-- Android 10 needs WRITE for the per-file delete consent dialog; 11+ uses MediaStore requests. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
+    <!--
+      The app's only network use: asking GitHub (and, as a fallback, GitLab) for the newest release
+      tag, and downloading that release's APK. No analytics, no ads, no account, nothing uploaded.
+      The check is throttled, runs only when the user leaves it on, and can be turned off in
+      Settings — see data/update/UpdateManager.kt.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Installing the downloaded APK still needs the user's per-app consent in system settings. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".VGalleryApp"
@@ -31,6 +43,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Hands the verified update APK to Android's installer: read-only, from the app's own
+             cache, and only for as long as that installer holds the granted URI permission. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
     </application>
 
 </manifest>

@@ -63,6 +63,9 @@ class AppPreferences @Inject constructor(
         val TRASHED_MEDIA = stringPreferencesKey("trashed_media")
         val NEW_FOLDERS = stringSetPreferencesKey("new_folders")
         val KNOWN_FOLDERS = stringSetPreferencesKey("known_folders")
+        val UPDATE_CHECK_ENABLED = booleanPreferencesKey("update_check_enabled")
+        val UPDATE_LAST_CHECK = longPreferencesKey("update_last_check")
+        val UPDATE_SKIPPED_VERSION = stringPreferencesKey("update_skipped_version")
     }
 
     /** The stored preferences; an `IOException` while reading yields empty preferences (defaults). */
@@ -206,6 +209,35 @@ class AppPreferences @Inject constructor(
             RecentFolderInfo(parts[0], parts[1], lastIndex, lastItemUri)
         } else null
     }
+
+    // ── Updates ───────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Whether the app may ask GitHub for a new release when it opens (on unless turned off). This is
+     * the switch that keeps "no network unless you allow it" honest for offline-only users.
+     */
+    val updateCheckEnabled: Flow<Boolean> = data.map { prefs ->
+        prefs[Keys.UPDATE_CHECK_ENABLED] ?: true
+    }
+
+    /** When the last check ran, so launches close together never hit the network twice. */
+    val lastUpdateCheck: Flow<Long> = data.map { prefs ->
+        prefs[Keys.UPDATE_LAST_CHECK] ?: 0L
+    }
+
+    /** The release version the user dismissed, so the exact same one is never offered again. */
+    val skippedUpdate: Flow<String> = data.map { prefs ->
+        prefs[Keys.UPDATE_SKIPPED_VERSION] ?: ""
+    }
+
+    suspend fun updateUpdateCheckEnabled(value: Boolean): Boolean =
+        safeEdit { it[Keys.UPDATE_CHECK_ENABLED] = value }
+
+    suspend fun updateLastUpdateCheck(timeMs: Long): Boolean =
+        safeEdit { it[Keys.UPDATE_LAST_CHECK] = timeMs }
+
+    suspend fun updateSkippedUpdate(version: String): Boolean =
+        safeEdit { it[Keys.UPDATE_SKIPPED_VERSION] = version }
 
     // ── Trash ─────────────────────────────────────────────────────────────────────────────
 
