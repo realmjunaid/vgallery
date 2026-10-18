@@ -22,6 +22,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -99,7 +101,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -831,6 +835,30 @@ private fun formatGridDuration(millis: Long): String {
 }
 
 /**
+ * Pinch-zoom and drag-pan for one feed item, driven by [ZoomPanState].
+ *
+ * Runs on the Initial pass so it reads gestures before the item's own tap/play
+ * detector and before the feed's scroll. At 1x it only acts on two-finger
+ * gestures, so one-finger drags still scroll the feed; once zoomed in, every
+ * drag pans the item instead (the feed has paused its scroll by then).
+ */
+private fun Modifier.feedZoom(zoom: ZoomPanState): Modifier = pointerInput(zoom) {
+    val slop = viewConfiguration.touchSlop
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (!zoomGestureApplies(event.changes.size, zoom.isZoomed)) continue
+            val pan = event.calculatePan()
+            val zoomChange = event.calculateZoom()
+            // A still finger is a tap candidate: leave it for the tap detector.
+            if (zoomChange == 1f && pan.getDistance() <= slop) continue
+            zoom.transform(zoomChange, pan.x, pan.y)
+            event.changes.forEach { it.consume() }
+        }
+    }
+}
+
+/**
  * One video inside the continuous feed: full-width like every photo, as many
  * per screen as fit. Tapping binds the shared player and plays; everything
  * else stays paused. Aspect is learned from the video once it plays.
@@ -842,6 +870,7 @@ private fun FeedVideoItem(
     uiVisible: Boolean,
     exoPlayer: ExoPlayer,
     videoAspects: MutableMap<Long, Float>,
+    zoom: ZoomPanState,
     onTogglePlay: () -> Unit,
     onDoubleTapChrome: () -> Unit
 ) {
@@ -852,7 +881,21 @@ private fun FeedVideoItem(
             .aspectRatio(aspect)
             .background(Color.Black)
             .clipToBounds()
+            .onSizeChanged { zoom.onBounds(it.width, it.height) }
+            .feedZoom(zoom)
     ) {
+        // Frame thumbnail, duration badge and player zoom and pan together;
+        // the tap layer and the play button stay anchored to the screen.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = zoom.scale
+                    scaleY = zoom.scale
+                    translationX = zoom.offsetX
+                    translationY = zoom.offsetY
+                }
+        ) {
         // Frame thumbnail underneath (also covers the pre-play state).
         StaticGalleryImage(
             uri = photo.uri,
@@ -905,6 +948,7 @@ private fun FeedVideoItem(
             onRelease = { playerView -> playerView.player = null },
             modifier = Modifier.fillMaxSize()
         )
+        }
         // Transparent tap layer above the player (Android views swallow touches,
         // so without this, taps on a video never toggle playback).
         // Double-tap anywhere toggles the chrome via the feed's own detector.
@@ -975,6 +1019,8 @@ private fun DevicePhotoViewer(
     }
     // Double-tap toggles all chrome (top bar + bottom title) for pure-image viewing.
     var uiVisible by remember { mutableStateOf(true) }
+    // Id of the item currently zoomed in, or -1 when none: the feed only scrolls at -1.
+    var zoomedId by remember { mutableLongStateOf(-1L) }
     // Fresh toggle inside gesture detectors (pointerInput blocks outlive recompositions).
     val toggleChrome = rememberUpdatedState({ uiVisible = !uiVisible })
     // No autoplay while scrolling: only the explicitly opened/tapped photo plays,
@@ -1133,13 +1179,23 @@ private fun DevicePhotoViewer(
         ) {
             LazyColumn(
                 state = listState,
-                // The feed always scrolls — even while zoomed. Zoom/pan use two fingers
-                // only, so one-finger scrolls never fight the zoom gesture.
+                // Pinch with two fingers to zoom up to 10x. While an item is zoomed the
+                // feed pauses its scroll, so drags pan that item instead of the feed;
+                // at 1x one-finger drags scroll as usual.
+                userScrollEnabled = zoomedId < 0L,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
                     val isPlaying = index == playingIndex
+                    // Per-item pinch-zoom state, shared by the photo and video branches.
+                    val zoom = remember(photo.id) { ZoomPanState() }
+                    // Only one item can be zoomed at a time — the feed stops scrolling
+                    // while it is — so tracking the owning id is enough to freeze scrolling.
+                    val zoomed by remember(zoom) { derivedStateOf { zoom.isZoomed } }
+                    LaunchedEffect(zoomed) {
+                        if (zoomed) zoomedId = photo.id else if (zoomedId == photo.id) zoomedId = -1L
+                    }
                     if (photo.isVideo) {
                         FeedVideoItem(
                             photo = photo,
@@ -1147,6 +1203,7 @@ private fun DevicePhotoViewer(
                             uiVisible = uiVisible,
                             exoPlayer = exoPlayer,
                             videoAspects = videoAspects,
+                            zoom = zoom,
                             onTogglePlay = { playingIndex = if (isPlaying) -1 else index },
                             onDoubleTapChrome = { toggleChrome.value() }
                         )
@@ -1221,7 +1278,23 @@ private fun DevicePhotoViewer(
                             )
                         }
                     Box(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clipToBounds()
+                            .onSizeChanged { zoom.onBounds(it.width, it.height) }
+                            .feedZoom(zoom)
+                    ) {
+                    // The image zooms and pans as one layer; the play button below
+                    // stays anchored to the item.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                scaleX = zoom.scale
+                                scaleY = zoom.scale
+                                translationX = zoom.offsetX
+                                translationY = zoom.offsetY
+                            }
                     ) {
                     if (directDrawable != null) {
                         // Animated GIF/WebP in a platform ImageView: animation
@@ -1247,6 +1320,7 @@ private fun DevicePhotoViewer(
                             contentScale = ContentScale.FillWidth,
                             modifier = tapModifier
                         )
+                    }
                     }
                     // Explicit play/pause for animated photos (tapping the GIF itself
                     // also plays it). Visible only with the chrome.
