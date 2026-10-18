@@ -24,7 +24,7 @@
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Middle-only playback** — GIFs and animated WebPs play only when centered on screen; the rest stay paused to save battery.
-- **Pinch-to-zoom** — two-finger pinch zooms the feed from 1x up to 10x, photos and videos alike. Drag to pan while zoomed; the feed scrolls again as soon as you pinch back to fit.
+- **Pinch-to-zoom** — one global pinch scales the whole vertical feed together, photos and videos alike, from 1x up to 10x and anchored under your fingers. While zoomed, drag sideways to pan (clamped so no blank space shows) and drag or fling up and down to keep scrolling through every item — a diagonal drag does both at once. Pinch back to fit to scroll normally again.
 - **Share, delete, search** — system share sheet, global name search from home, long-press multi-select in folders and on home with batch actions.
 - **Trash** 🗑️ — deleting moves items to a Google-Photos-style Trash instead of wiping them: everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent).
 - **Move to folder** 📁 — pick photos or videos inside a folder and move them into any other folder on the device in one step (long-press to select, or from the full-screen viewer).

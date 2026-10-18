@@ -22,6 +22,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -884,25 +885,35 @@ private fun formatGridDuration(millis: Long): String {
 }
 
 /**
- * Pinch-zoom and drag-pan for one feed item, driven by [ZoomPanState].
+ * Global feed gesture, Google Drive PDF-viewer style.
  *
- * Runs on the Initial pass so it reads gestures before the item's own tap/play
- * detector and before the feed's scroll. At 1x it only acts on two-finger
- * gestures, so one-finger drags still scroll the feed; once zoomed in, every
- * drag pans the item instead (the feed has paused its scroll by then).
+ * Runs on the Initial pass so it decides before the item's tap/play detector and before the
+ * feed's scroll. Two fingers pinch the whole feed about the centroid; while zoomed, a sideways
+ * drag pans. Vertical drags are never consumed, so the feed keeps scrolling through every item —
+ * including during a diagonal drag, which pans and scrolls at the same time. At 1x only
+ * two-finger pinches are handled, so one-finger drags stay plain list scrolling.
  */
-private fun Modifier.feedZoom(zoom: ZoomPanState): Modifier = pointerInput(zoom) {
-    val slop = viewConfiguration.touchSlop
+private fun Modifier.feedZoomGesture(state: FeedZoomState): Modifier = pointerInput(state) {
     awaitPointerEventScope {
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
-            if (!zoomGestureApplies(event.changes.size, zoom.isZoomed)) continue
-            val pan = event.calculatePan()
-            val zoomChange = event.calculateZoom()
-            // A still finger is a tap candidate: leave it for the tap detector.
-            if (zoomChange == 1f && pan.getDistance() <= slop) continue
-            zoom.transform(zoomChange, pan.x, pan.y)
-            event.changes.forEach { it.consume() }
+            val pressed = event.changes.count { it.pressed }
+            if (pressed >= 2) {
+                state.pinch(event.calculateZoom(), event.calculateCentroid().x)
+                event.changes.forEach { it.consume() }
+            } else if (pressed == 1 && state.isZoomed) {
+                event.changes.firstOrNull { it.pressed }?.let { change ->
+                    // Read raw positions: a diagonal drag may already be consumed by the feed's
+                    // scroll, and positionChange() would then report zero and stop the pan.
+                    val dx = change.position.x - change.previousPosition.x
+                    val dy = change.position.y - change.previousPosition.y
+                    if (dx != 0f) {
+                        state.panBy(dx)
+                        // Consume only a sideways drag; a diagonal drag still scrolls vertically.
+                        if (abs(dx) > abs(dy)) change.consume()
+                    }
+                }
+            }
         }
     }
 }
@@ -919,7 +930,6 @@ private fun FeedVideoItem(
     uiVisible: Boolean,
     exoPlayer: ExoPlayer,
     videoAspects: MutableMap<Long, Float>,
-    zoom: ZoomPanState,
     onTogglePlay: () -> Unit,
     onDoubleTapChrome: () -> Unit
 ) {
@@ -930,21 +940,9 @@ private fun FeedVideoItem(
             .aspectRatio(aspect)
             .background(Color.Black)
             .clipToBounds()
-            .onSizeChanged { zoom.onBounds(it.width, it.height) }
-            .feedZoom(zoom)
     ) {
-        // Frame thumbnail, duration badge and player zoom and pan together;
-        // the tap layer and the play button stay anchored to the screen.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = zoom.scale
-                    scaleY = zoom.scale
-                    translationX = zoom.offsetX
-                    translationY = zoom.offsetY
-                }
-        ) {
+        // Thumbnail, duration badge and player share one layer; the feed zooms them as a whole.
+        Box(modifier = Modifier.fillMaxSize()) {
         // Frame thumbnail underneath (also covers the pre-play state).
         StaticGalleryImage(
             uri = photo.uri,
@@ -1069,8 +1067,8 @@ private fun DevicePhotoViewer(
     }
     // Double-tap toggles all chrome (top bar + bottom title) for pure-image viewing.
     var uiVisible by remember { mutableStateOf(true) }
-    // Id of the item currently zoomed in, or -1 when none: the feed only scrolls at -1.
-    var zoomedId by remember { mutableLongStateOf(-1L) }
+    // One global pinch-zoom (1x-10x) owned by the feed, Google Drive PDF-viewer style.
+    val feedZoom = remember { FeedZoomState() }
     // Fresh toggle inside gesture detectors (pointerInput blocks outlive recompositions).
     val toggleChrome = rememberUpdatedState({ uiVisible = !uiVisible })
     // No autoplay while scrolling: only the explicitly opened/tapped photo plays,
@@ -1230,29 +1228,29 @@ private fun DevicePhotoViewer(
                 .fillMaxSize()
                 .padding(padding)
                 .background(Color.Black)
+                .clipToBounds()
+                .feedZoomGesture(feedZoom)
                 .pointerInput(Unit) {
                     detectTapGestures(onDoubleTap = { toggleChrome.value() })
                 }
         ) {
             LazyColumn(
                 state = listState,
-                // Pinch with two fingers to zoom up to 10x. While an item is zoomed the
-                // feed pauses its scroll, so drags pan that item instead of the feed;
-                // at 1x one-finger drags scroll as usual.
-                userScrollEnabled = zoomedId < 0L,
-                modifier = Modifier.fillMaxSize(),
+                // One global pinch-zoom drives the whole feed: the scaled layer below zooms every
+                // item together while this list keeps handling vertical scrolling.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { feedZoom.onViewport(it.width) }
+                    .graphicsLayer {
+                        scaleX = feedZoom.scale
+                        scaleY = feedZoom.scale
+                        translationX = feedZoom.offsetX
+                        translationY = 0f
+                    },
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
                     val isPlaying = index == playingIndex
-                    // Per-item pinch-zoom state, shared by the photo and video branches.
-                    val zoom = remember(photo.id) { ZoomPanState() }
-                    // Only one item can be zoomed at a time — the feed stops scrolling
-                    // while it is — so tracking the owning id is enough to freeze scrolling.
-                    val zoomed by remember(zoom) { derivedStateOf { zoom.isZoomed } }
-                    LaunchedEffect(zoomed) {
-                        if (zoomed) zoomedId = photo.id else if (zoomedId == photo.id) zoomedId = -1L
-                    }
                     if (photo.isVideo) {
                         FeedVideoItem(
                             photo = photo,
@@ -1260,7 +1258,6 @@ private fun DevicePhotoViewer(
                             uiVisible = uiVisible,
                             exoPlayer = exoPlayer,
                             videoAspects = videoAspects,
-                            zoom = zoom,
                             onTogglePlay = { playingIndex = if (isPlaying) -1 else index },
                             onDoubleTapChrome = { toggleChrome.value() }
                         )
@@ -1338,21 +1335,9 @@ private fun DevicePhotoViewer(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clipToBounds()
-                            .onSizeChanged { zoom.onBounds(it.width, it.height) }
-                            .feedZoom(zoom)
                     ) {
-                    // The image zooms and pans as one layer; the play button below
-                    // stays anchored to the item.
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                scaleX = zoom.scale
-                                scaleY = zoom.scale
-                                translationX = zoom.offsetX
-                                translationY = zoom.offsetY
-                            }
-                    ) {
+                    // The image layer; the feed zooms it along with every other item.
+                    Box(modifier = Modifier.fillMaxWidth()) {
                     if (directDrawable != null) {
                         // Animated GIF/WebP in a platform ImageView: animation
                         // callbacks are native, so playback just works.
