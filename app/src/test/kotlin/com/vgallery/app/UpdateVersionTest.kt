@@ -7,6 +7,7 @@ import com.vgallery.app.data.update.compareVersions
 import com.vgallery.app.data.update.githubApkUrl
 import com.vgallery.app.data.update.isNewerVersion
 import com.vgallery.app.data.update.isTrustedDownloadUrl
+import com.vgallery.app.data.update.newestVersionName
 import com.vgallery.app.data.update.parseVersion
 import com.vgallery.app.data.update.pickApkAsset
 import com.vgallery.app.data.update.releaseApkName
@@ -155,5 +156,24 @@ class UpdateVersionTest {
             updateStateSummary(UpdateState.ReadyToInstall(release, "/tmp/x.apk"), "1.0.7")
         )
         assertEquals("Check failed", updateStateSummary(UpdateState.Failed("nope"), "1.0.7"))
+        // A failed *download* must not be reported as a failed check: the download is the step the
+        // user just watched fail.
+        assertEquals(
+            "Update failed",
+            updateStateSummary(
+                UpdateState.Failed("nope", UpdateState.Failed.Phase.DOWNLOAD),
+                "1.0.7"
+            )
+        )
+    }
+
+    @Test
+    fun theNewestTagWinsAndJunkIsIgnored() {
+        assertEquals("1.0.9", newestVersionName(listOf("v1.0.7", "v1.0.9", "v1.0.8")))
+        assertEquals("1.0.10", newestVersionName(listOf("v1.0.9", "v1.0.10")))
+        assertEquals("2.0.0", newestVersionName(listOf("2.0.0", "v1.9.9")))
+        // Nothing version-like: a branch name, a year, an empty list.
+        assertNull(newestVersionName(listOf("latest", "2024", "")))
+        assertNull(newestVersionName(emptyList()))
     }
 }

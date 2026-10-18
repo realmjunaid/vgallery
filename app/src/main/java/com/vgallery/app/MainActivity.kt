@@ -35,7 +35,6 @@ class MainActivity : ComponentActivity() {
                 val updateState by updateManager.state.collectAsStateWithLifecycle()
                 UpdatePromptHost(
                     state = updateState,
-                    currentVersionName = updateManager.currentVersionName,
                     onUpdateNow = { updateManager.downloadAndInstall() },
                     onCancelPrompt = { updateManager.dismissPrompt() },
                     onCancelDownload = { updateManager.cancelDownload() },

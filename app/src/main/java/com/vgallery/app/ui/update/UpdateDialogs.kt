@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -12,8 +15,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.vgallery.app.data.update.UpdateState
 import com.vgallery.app.ui.theme.SurfaceVariant
@@ -34,7 +40,6 @@ import kotlin.math.roundToInt
 @Composable
 fun UpdatePromptHost(
     state: UpdateState,
-    currentVersionName: String,
     onUpdateNow: () -> Unit,
     onCancelPrompt: () -> Unit,
     onCancelDownload: () -> Unit,
@@ -66,21 +71,36 @@ fun UpdatePromptHost(
             dismissLabel = "Cancel",
             onDismiss = onCancelPrompt,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val notes = state.release.notes?.takeIf { it.isNotBlank() }
+            if (notes == null) {
                 Text(
-                    text = "You have $currentVersionName. The download starts right away; Android " +
-                        "asks for one last confirmation before installing.",
+                    text = "The download starts right away; Android asks for one last confirmation " +
+                        "before installing.",
                     color = TextSecondary,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                state.release.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+            } else {
+                // Just the change list: the dialog says what is new and nothing else. The whole note
+                // is there, scrolling inside a fixed box, because the eight-line cut it used to have
+                // hid the part worth reading behind an ellipsis.
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = notes,
-                        color = TextMuted,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 8,
-                        overflow = TextOverflow.Ellipsis
+                        text = "What's new",
+                        color = Violet400,
+                        style = MaterialTheme.typography.labelLarge
                     )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 250.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = releaseNotes(notes),
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         }
@@ -137,7 +157,7 @@ fun UpdatePromptHost(
 
         is UpdateState.Failed -> UpdateDialog(
             onDismissRequest = onClose,
-            title = "Update failed",
+            title = if (state.phase == UpdateState.Failed.Phase.CHECK) "Check failed" else "Update failed",
             confirmLabel = "Try again",
             onConfirm = onTryAgain,
             dismissLabel = "Close",
@@ -201,5 +221,47 @@ fun updateStateSummary(state: UpdateState, currentVersionName: String): String =
         else "Downloading\u2026 ${(state.progress * 100f).roundToInt()}%"
     }
     is UpdateState.ReadyToInstall -> "Ready to install"
-    is UpdateState.Failed -> "Check failed"
+    is UpdateState.Failed ->
+        if (state.phase == UpdateState.Failed.Phase.CHECK) "Check failed" else "Update failed"
 }
+
+/**
+ * The release note as the dialog shows it, and the reason it is not shown raw.
+ *
+ * GitHub's markdown is reduced to what fits a phone: `**` becomes bold, `-` becomes a real bullet, a
+ * heading loses its `#`, single `*` and backticks go away. The preamble paragraphs a release note
+ * usually opens with are left out too, so the prompt is the change list rather than the announcement
+ * — and a note that has no list at all is still shown, cleaned, instead of being hidden.
+ */
+internal fun releaseNotes(notes: String): AnnotatedString = buildAnnotatedString {
+    val lines = notes.lines().map { it.trim() }
+    val shown = lines.filter { isBullet(it) }.ifEmpty { lines.filter { it.isNotEmpty() } }
+    var written = false
+    shown.forEach { raw ->
+        val line = raw.trimStart('#').trim()
+        val bullet = isBullet(line)
+        val body = (if (bullet) line.drop(2).trim() else line).replace(" - ", " \u2014 ")
+        // Cleaned before anything is appended, so a line that reduces to nothing leaves no blank.
+        val pieces = body.split("**").mapIndexedNotNull { index, part ->
+            val bold = index % 2 == 1
+            val text = (if (bold) part else part.replace("*", "")).replace("`", "")
+            if (text.isBlank()) null else (if (bold) text.trim() else text) to bold
+        }
+        if (pieces.isEmpty()) return@forEach
+        if (written) append('\n')
+        written = true
+        if (bullet) append("\u2022 ")
+        pieces.forEach { (text, bold) ->
+            if (bold) {
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) { append(text) }
+            } else {
+                append(text)
+            }
+        }
+    }
+}
+
+/** A markdown list item: `- x`, `* x`, `• x` or `1. x`. */
+private fun isBullet(line: String): Boolean =
+    line.startsWith("- ") || line.startsWith("* ") || line.startsWith("\u2022 ") ||
+        (line.length > 2 && line[0].isDigit() && line[1] == '.')

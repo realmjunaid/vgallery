@@ -37,8 +37,12 @@ sealed interface UpdateState {
     /** The APK is downloaded *and verified*; the system installer is the last step. */
     data class ReadyToInstall(val release: AppRelease, val filePath: String) : UpdateState
 
-    /** Something went wrong; [message] is written for the user. */
-    data class Failed(val message: String) : UpdateState
+    /** Something went wrong; [message] is written for the user, [phase] says which step stopped. */
+    data class Failed(val message: String, val phase: Phase = Phase.CHECK) : UpdateState {
+
+        /** The step that failed, so the prompt and the Settings row can name it honestly. */
+        enum class Phase { CHECK, DOWNLOAD }
+    }
 }
 
 /**
@@ -115,7 +119,8 @@ class UpdateManager @Inject constructor(
             } catch (e: Exception) {
                 downloadFailed = true
                 _state.value = UpdateState.Failed(
-                    e.message?.takeIf { it.isNotBlank() } ?: "The update could not be downloaded."
+                    e.message?.takeIf { it.isNotBlank() } ?: "The update could not be downloaded.",
+                    UpdateState.Failed.Phase.DOWNLOAD
                 )
             }
         }
@@ -130,7 +135,10 @@ class UpdateManager @Inject constructor(
         val ready = _state.value as? UpdateState.ReadyToInstall ?: return
         val file = File(ready.filePath)
         if (!file.isFile) {
-            _state.value = UpdateState.Failed("The downloaded update is gone. Download it again.")
+            _state.value = UpdateState.Failed(
+                "The downloaded update is gone. Download it again.",
+                UpdateState.Failed.Phase.DOWNLOAD
+            )
             downloadFailed = true
             return
         }

@@ -15,6 +15,13 @@ const val UPDATE_RELEASE_API = "https://api.github.com/repos/$UPDATE_REPO/releas
 /** The GitLab mirror's releases, asked only when GitHub cannot answer. */
 const val UPDATE_GITLAB_API = "https://gitlab.com/api/v4/projects/realmjunaid%2Fvgallery/releases"
 
+/**
+ * The mirror's tags. A tag is pushed to GitLab with every release even when no GitLab *release* is
+ * created there, so this is what keeps the check working when GitHub's API is rate limited.
+ */
+const val UPDATE_GITLAB_TAGS_API =
+    "https://gitlab.com/api/v4/projects/realmjunaid%2Fvgallery/repository/tags?per_page=30"
+
 /** Downloads, the APK, and installs are refused on anything but HTTPS. */
 const val UPDATE_HTTPS_PREFIX = "https://"
 
@@ -71,6 +78,17 @@ fun isNewerVersion(current: String?, latest: String?): Boolean {
     val latestParts = parseVersion(latest) ?: return false
     return compareVersions(latestParts, currentParts) > 0
 }
+
+/**
+ * The highest version among release tag names, so a mirror's tag list can stand in for its releases.
+ * Unparseable tags (`latest`, a branch name, a year) are ignored rather than counted.
+ */
+fun newestVersionName(tags: List<String>): String? = tags
+    .mapNotNull { tag ->
+        val name = tag.trim().removePrefix("v").removePrefix("V")
+        if (name.isEmpty() || parseVersion(name) == null) null else name
+    }
+    .maxWithOrNull { left, right -> compareVersions(parseVersion(left)!!, parseVersion(right)!!) }
 
 /** The one asset worth downloading: the release APK first, any other APK after that. */
 fun pickApkAsset(assets: List<ReleaseAsset>): ReleaseAsset? =

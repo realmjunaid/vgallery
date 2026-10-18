@@ -25,9 +25,9 @@ import javax.inject.Singleton
 @Singleton
 class UpdateChecker @Inject constructor() {
 
-    /** The newest release, or null when neither host could be reached or understood. */
+    /** The newest release, or null when no host could be reached or understood. */
     suspend fun latest(): AppRelease? = withContext(Dispatchers.IO) {
-        fetchGitHub() ?: fetchGitLab()
+        fetchGitHub() ?: fetchGitLabRelease() ?: fetchGitLabTag()
     }
 
     private fun fetchGitHub(): AppRelease? {
@@ -58,7 +58,7 @@ class UpdateChecker @Inject constructor() {
         }
     }
 
-    private fun fetchGitLab(): AppRelease? {
+    private fun fetchGitLabRelease(): AppRelease? {
         val body = try {
             read(UPDATE_GITLAB_API, "application/json")
         } catch (_: Exception) {
@@ -81,6 +81,37 @@ class UpdateChecker @Inject constructor() {
                     ?: githubApkUrl(canonicalTag, version),
                 apkSha256 = null,
                 source = "GitLab",
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * The last resort: the mirror's tags, which are pushed with every release even when no GitLab
+     * release object exists there. Only the version is read — the APK still comes from GitHub, under
+     * the same tag — and this is what keeps a check working when GitHub's API is rate limited.
+     */
+    private fun fetchGitLabTag(): AppRelease? {
+        val body = try {
+            read(UPDATE_GITLAB_TAGS_API, "application/json")
+        } catch (_: Exception) {
+            return null
+        }
+        return try {
+            val tags = JSONArray(body)
+            val names = (0 until tags.length()).mapNotNull { index ->
+                tags.optJSONObject(index)?.optString("name")?.takeIf { it.isNotBlank() }
+            }
+            val version = newestVersionName(names) ?: return null
+            val tag = releaseTag(version)
+            AppRelease(
+                versionName = version,
+                tag = tag,
+                notes = null,
+                apkUrl = githubApkUrl(tag, version),
+                apkSha256 = null,
+                source = "GitLab tag",
             )
         } catch (_: Exception) {
             null

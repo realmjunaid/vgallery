@@ -159,26 +159,43 @@ class UpdateInstaller @Inject constructor(
             return "The download is not newer than the installed build."
         }
         val ours = signatures(installedInfo())
+        if (ours.isEmpty()) {
+            return "The signing key of the installed VGallery could not be read, so the download " +
+                "cannot be trusted."
+        }
         val theirs = signatures(archive)
-        if (ours.isEmpty() || theirs.isEmpty() || ours != theirs) {
-            return "The download is not signed with VGallery's release key."
+        if (theirs.isEmpty()) {
+            return "The download carries no signature and was refused."
+        }
+        if (ours != theirs) {
+            return "The download is signed with a different key (${theirs.first().take(8)}) than " +
+                "the VGallery on this phone (${ours.first().take(8)}), so Android would refuse it. " +
+                "A test build installed from Android Studio has to be uninstalled first."
         }
         return null
     }
 
-    private fun archiveInfo(file: File): PackageInfo? {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+    /**
+     * The flags that make the platform hand over signing certificates.
+     *
+     * They have to be passed *everywhere* a [PackageInfo] is read: with plain `0` flags both
+     * `signingInfo` and `signatures` come back empty, so reading the installed app's own key used to
+     * return nothing and every download was refused for carrying "the wrong key".
+     */
+    private fun signatureFlags(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             PackageManager.GET_SIGNING_CERTIFICATES
         } else {
-            @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
         }
-        return context.packageManager.getPackageArchiveInfo(file.absolutePath, flags)
-    }
+
+    private fun archiveInfo(file: File): PackageInfo? =
+        context.packageManager.getPackageArchiveInfo(file.absolutePath, signatureFlags())
 
     private fun installedInfo(): PackageInfo =
         try {
-            @Suppress("DEPRECATION")
-            context.packageManager.getPackageInfo(context.packageName, 0)
+            context.packageManager.getPackageInfo(context.packageName, signatureFlags())
         } catch (e: PackageManager.NameNotFoundException) {
             throw IllegalStateException("VGallery is not installed?", e)
         }
@@ -190,14 +207,23 @@ class UpdateInstaller @Inject constructor(
             @Suppress("DEPRECATION") info.versionCode.toLong()
         }
 
-    /** The signing certificates of a package, normalised so two sets can be compared directly. */
-    private fun signatures(info: PackageInfo): Set<List<Byte>> {
-        val signatures: Array<Signature>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners
+    /**
+     * The SHA-256 fingerprints of a package's signers — the same lowercase hex `apksigner` prints,
+     * which is also what the project publishes — so two sets can be compared directly and a mismatch
+     * can name both keys.
+     */
+    private fun signatures(info: PackageInfo?): Set<String> {
+        if (info == null) return emptySet()
+        val modern = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners.orEmpty()
         } else {
-            @Suppress("DEPRECATION") info.signatures
+            emptyArray<Signature>()
         }
-        return signatures.orEmpty().map { it.toByteArray().toList() }.toSet()
+        @Suppress("DEPRECATION")
+        val legacy = info.signatures.orEmpty()
+        return (modern.takeIf { it.isNotEmpty() } ?: legacy).map { certificate ->
+            MessageDigest.getInstance("SHA-256").digest(certificate.toByteArray()).toHex()
+        }.toSet()
     }
 
     private fun ByteArray.toHex(): String {
