@@ -9,9 +9,9 @@ import android.os.Build
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -136,6 +137,7 @@ import coil3.size.Precision
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.vgallery.app.data.gallery.DeviceAlbum
+import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DevicePhotoRow
 import com.vgallery.app.data.gallery.HomeTab
 import com.vgallery.app.data.gallery.formatBytes
@@ -166,6 +168,7 @@ import com.vgallery.app.ui.theme.Violet500
 fun DeviceGalleryScreen(
     onBack: () -> Unit,
     onSettingsClick: () -> Unit = {},
+    onTrashClick: () -> Unit = {},
     isHome: Boolean = false,
     viewModel: DeviceGalleryViewModel = hiltViewModel()
 ) {
@@ -185,6 +188,9 @@ fun DeviceGalleryScreen(
     // Shared delete targets (grid, folders, albums) with one confirm dialog.
     var deleteTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
     var infoTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
+    // Items queued for "Move to folder", plus the destinations once they finish loading.
+    var moveItems by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
+    var moveFolderOptions by remember { mutableStateOf<List<DeviceFolderTarget>?>(null) }
 
     fun toast(msg: String) {
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -194,7 +200,7 @@ fun DeviceGalleryScreen(
         uiState.photos.filter { it.id in selectedPhotoIds }
 
     fun performDelete(targets: List<DevicePhotoRow>) {
-        viewModel.requestDelete(targets.map { it.uri }) { ok, msg ->
+        viewModel.moveToTrash(targets) { ok, msg ->
             toast(msg)
             if (ok) {
                 selectedPhotoIds = emptySet()
@@ -204,7 +210,27 @@ fun DeviceGalleryScreen(
         }
     }
 
-    // System consent dialog for deletes (Android 10+): launched here, answered in the VM.
+    fun startMove(targets: List<DevicePhotoRow>) {
+        if (targets.isEmpty()) return
+        moveItems = targets
+        moveFolderOptions = null
+        viewModel.loadMoveTargets { moveFolderOptions = it }
+    }
+
+    fun performMove(targets: List<DevicePhotoRow>, target: DeviceFolderTarget) {
+        viewModel.moveToFolder(targets, target) { ok, msg ->
+            toast(msg)
+            if (ok) {
+                selectedPhotoIds = emptySet()
+                selectedFolders = emptySet()
+                moveItems = null
+                moveFolderOptions = null
+                viewModel.refreshAfterDelete()
+            }
+        }
+    }
+
+    // System consent dialog for moves (Android 10+): launched here, answered in the VM.
     val consentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -271,6 +297,7 @@ fun DeviceGalleryScreen(
                     onShare = {
                         sharePhotos(context, viewModel.photosInFolders(selectedFolders))
                     },
+                    onMove = { startMove(viewModel.photosInFolders(selectedFolders)) },
                     onInfo = { infoTargets = viewModel.photosInFolders(selectedFolders) },
                     onDelete = { deleteTargets = viewModel.photosInFolders(selectedFolders) },
                     onClear = { selectedFolders = emptySet() }
@@ -323,6 +350,13 @@ fun DeviceGalleryScreen(
                         }
                     }
                     if (isHome && selectedFolders.isEmpty()) {
+                        IconButton(onClick = onTrashClick) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Trash",
+                                tint = TextSecondary
+                            )
+                        }
                         IconButton(onClick = onSettingsClick) {
                             Icon(
                                 imageVector = Icons.Filled.Settings,
@@ -448,6 +482,7 @@ fun DeviceGalleryScreen(
                                     onShare = {
                                         sharePhotos(context, selectedAlbumRows())
                                     },
+                                    onMove = { startMove(selectedAlbumRows()) },
                                     onInfo = { infoTargets = selectedAlbumRows() },
                                     onDelete = { deleteTargets = selectedAlbumRows() },
                                     onClear = { selectedPhotoIds = emptySet() }
@@ -491,7 +526,8 @@ fun DeviceGalleryScreen(
                 photos = viewerPhotos,
                 startIndex = viewerIndex,
                 title = uiState.selectedAlbum ?: "",
-                onDismiss = { dismissViewer() }
+                onDismiss = { dismissViewer() },
+                onMove = { startMove(listOf(it)) }
             )
         }
     }
@@ -505,6 +541,19 @@ fun DeviceGalleryScreen(
         },
         onDismiss = { deleteTargets = null }
     )
+
+    // Folder picker for "Move to folder".
+    moveItems?.let { items ->
+        MoveFolderDialog(
+            itemCount = items.size,
+            targets = moveFolderOptions,
+            onPick = { target -> performMove(items, target) },
+            onDismiss = {
+                moveItems = null
+                moveFolderOptions = null
+            }
+        )
+    }
 
     // Shared details sheet for grid + folder selections.
     infoTargets?.let { infos ->
@@ -990,6 +1039,7 @@ private fun DevicePhotoViewer(
     startIndex: Int,
     title: String,
     onDismiss: () -> Unit,
+    onMove: (DevicePhotoRow) -> Unit = {},
     viewModel: DeviceGalleryViewModel = hiltViewModel()
 ) {
     // Drive-PDF style: one continuous vertical feed, every photo full-width back to back,
@@ -1036,9 +1086,9 @@ private fun DevicePhotoViewer(
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
 
-    /** Runs a delete and toasts the outcome; consent dialogs are handled one level up. */
+    /** Moves items to Trash and toasts the outcome. */
     fun performDelete(targets: List<DevicePhotoRow>) {
-        viewModel.requestDelete(targets.map { it.uri }) { ok, msg ->
+        viewModel.moveToTrash(targets) { ok, msg ->
             toast(msg)
             if (ok) viewModel.refreshAfterDelete()
         }
@@ -1140,6 +1190,13 @@ private fun DevicePhotoViewer(
                     },
                     actions = {
                         photos.getOrNull(currentIndex)?.let { current ->
+                            IconButton(onClick = { onMove(current) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Folder,
+                                    contentDescription = "Move",
+                                    tint = Color.White
+                                )
+                            }
                             IconButton(onClick = { sharePhotos(context, listOf(current)) }) {
                                 Icon(
                                     imageVector = Icons.Filled.Share,
@@ -1436,6 +1493,79 @@ internal fun sharePhotos(context: android.content.Context, photos: List<DevicePh
     context.startActivity(Intent.createChooser(intent, "Share ${photos.size} items via"))
 }
 
+/** Folder picker for "Move to folder": every destination is a folder the gallery already shows. */
+@Composable
+private fun MoveFolderDialog(
+    itemCount: Int,
+    targets: List<DeviceFolderTarget>?,
+    onPick: (DeviceFolderTarget) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceVariant,
+        title = {
+            Text(
+                text = if (itemCount > 1) "Move $itemCount items to" else "Move to folder",
+                color = TextPrimary
+            )
+        },
+        text = {
+            when {
+                targets == null -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Violet400,
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = "Loading folders\u2026",
+                            color = TextSecondary,
+                            modifier = Modifier.padding(start = 12.dp)
+                        )
+                    }
+                }
+                targets.isEmpty() -> Text("No folders found on this device.", color = TextSecondary)
+                else -> {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                        items(targets, key = { it.relativePath }) { target ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onPick(target) }
+                                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Filled.Folder, contentDescription = null, tint = Violet400)
+                                Column(modifier = Modifier.padding(start = 12.dp)) {
+                                    Text(
+                                        text = target.displayName,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = if (target.count == 1) "1 item" else "${target.count} items",
+                                        color = TextMuted,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondary)
+            }
+        }
+    )
+}
+
 /** Shared delete confirmation for viewer, grid and folder selections. */
 @Composable
 private fun DeleteConfirmDialog(
@@ -1446,14 +1576,14 @@ private fun DeleteConfirmDialog(
     targets?.takeIf { it.isNotEmpty() }?.let { list ->
         val title = if (list.size == 1) {
             val one = list.single()
-            "Delete this ${if (one.isVideo) "video" else "photo"}?"
+            "Move this ${if (one.isVideo) "video" else "photo"} to trash?"
         } else {
-            "Delete ${list.size} items?"
+            "Move ${list.size} items to trash?"
         }
         val message = if (list.size == 1) {
-            "\"${list.single().name}\" will be removed from your device."
+            "\"${list.single().name}\" will be moved to Trash. You can restore it within 30 days."
         } else {
-            "The selected items will be removed from your device."
+            "The selected items will be moved to Trash. You can restore them within 30 days."
         }
         AlertDialog(
             onDismissRequest = onDismiss,
@@ -1462,7 +1592,7 @@ private fun DeleteConfirmDialog(
             text = { Text(message, color = TextSecondary) },
             confirmButton = {
                 TextButton(onClick = { onConfirm(list) }) {
-                    Text("Delete", color = ErrorRed)
+                    Text("Move to trash", color = ErrorRed)
                 }
             },
             dismissButton = {
@@ -1481,6 +1611,7 @@ private fun SelectionBar(
     count: Int,
     noun: String,
     onShare: () -> Unit,
+    onMove: () -> Unit,
     onInfo: () -> Unit,
     onDelete: () -> Unit,
     onClear: () -> Unit
@@ -1506,6 +1637,9 @@ private fun SelectionBar(
             }
         },
         actions = {
+            IconButton(onClick = onMove) {
+                Icon(Icons.Filled.Folder, contentDescription = "Move", tint = Color.White)
+            }
             IconButton(onClick = onShare) {
                 Icon(Icons.Filled.Share, contentDescription = "Share", tint = Color.White)
             }

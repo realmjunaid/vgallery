@@ -14,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.vgallery.app.ui.settings.SettingsScreen
+import com.vgallery.app.ui.trash.TrashScreen
 import com.vgallery.app.ui.viewer.FolderMediaGridScreen
 import com.vgallery.app.ui.viewer.ReelsViewerScreen
 import com.vgallery.app.ui.viewer.landscape.LandscapeVideoViewerScreen
@@ -24,6 +25,7 @@ object Routes {
     const val LANDSCAPE_VIEWER = "landscape_viewer/{folderUri}/{startIndex}?fresh={fresh}"
     const val GRID = "grid/{folderUri}"
     const val SETTINGS = "settings"
+    const val TRASH = "trash"
 
     /**
      * [fresh] = true rescans the folder and resolves the start item by its saved URI (Home's play
@@ -43,6 +45,7 @@ interface VGalleryScreens {
         onFolderSelected: (Uri) -> Unit,
         onPlaySelected: (Uri, Int, Boolean) -> Unit,
         onSettingsClick: () -> Unit,
+        onTrashClick: () -> Unit,
         onDeviceGalleryClick: () -> Unit = {},
     )
 
@@ -63,6 +66,9 @@ interface VGalleryScreens {
 
     @Composable
     fun Settings(onBack: () -> Unit)
+
+    @Composable
+    fun Trash(onBack: () -> Unit)
 }
 
 /** The app's real screens. Home is the auto device gallery (no manual folder pick). */
@@ -72,10 +78,12 @@ object AppScreens : VGalleryScreens {
         onFolderSelected: (Uri) -> Unit,
         onPlaySelected: (Uri, Int, Boolean) -> Unit,
         onSettingsClick: () -> Unit,
+        onTrashClick: () -> Unit,
         onDeviceGalleryClick: () -> Unit,
     ) = com.vgallery.app.ui.gallery.DeviceGalleryScreen(
         onBack = {},
         onSettingsClick = onSettingsClick,
+        onTrashClick = onTrashClick,
         isHome = true
     )
 
@@ -116,6 +124,9 @@ object AppScreens : VGalleryScreens {
 
     @Composable
     override fun Settings(onBack: () -> Unit) = SettingsScreen(onBack = onBack)
+
+    @Composable
+    override fun Trash(onBack: () -> Unit) = TrashScreen(onBack = onBack)
 }
 
 private const val LAST_VIEWED_INDEX = "lastViewedIndex"
@@ -180,6 +191,9 @@ fun VGalleryNavGraph(
                 },
                 onSettingsClick = {
                     navController.navigateFrom(entry, Routes.SETTINGS)
+                },
+                onTrashClick = {
+                    navController.navigateFrom(entry, Routes.TRASH)
                 },
                 onDeviceGalleryClick = {}
             )
@@ -249,6 +263,12 @@ fun VGalleryNavGraph(
 
         composable(Routes.SETTINGS) { entry ->
             screens.Settings(
+                onBack = { navController.popFrom(entry) }
+            )
+        }
+
+        composable(Routes.TRASH) { entry ->
+            screens.Trash(
                 onBack = { navController.popFrom(entry) }
             )
         }

@@ -25,7 +25,9 @@
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Middle-only playback** — GIFs and animated WebPs play only when centered on screen; the rest stay paused to save battery.
 - **Pinch-to-zoom** — two-finger pinch zooms the feed from 1x up to 10x, photos and videos alike. Drag to pan while zoomed; the feed scrolls again as soon as you pinch back to fit.
-- **Share, delete, search** — system share sheet, delete with confirm + Android consent, global name search from home, long-press multi-select in folders and on home with batch actions.
+- **Share, delete, search** — system share sheet, global name search from home, long-press multi-select in folders and on home with batch actions.
+- **Trash** 🗑️ — deleting moves items to a Google-Photos-style Trash instead of wiping them: everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent).
+- **Move to folder** 📁 — pick photos or videos inside a folder and move them into any other folder on the device in one step (long-press to select, or from the full-screen viewer).
 - **Details sheet** — size, resolution, date, folder and type for any photo or selection.
 - **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
 - **Modern feel** — crossfade image loading, animated grids, real-photo album covers.

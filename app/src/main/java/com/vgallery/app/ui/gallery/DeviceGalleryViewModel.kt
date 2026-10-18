@@ -1,14 +1,15 @@
 package com.vgallery.app.ui.gallery
 
 import android.content.IntentSender
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vgallery.app.data.gallery.DeleteResult
 import com.vgallery.app.data.gallery.DeviceAlbum
+import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DeviceGalleryRepository
 import com.vgallery.app.data.gallery.DevicePhotoRow
 import com.vgallery.app.data.gallery.HomeTab
+import com.vgallery.app.data.gallery.MoveResult
+import com.vgallery.app.data.gallery.TrashedItem
 import com.vgallery.app.data.gallery.groupIntoAlbums
 import com.vgallery.app.data.gallery.inTab
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -152,10 +153,36 @@ class DeviceGalleryViewModel @Inject constructor(
         if (query.isBlank()) photos
         else photos.filter { it.name.contains(query.trim(), ignoreCase = true) }
 
+    /** Rescans after a consent grant or a viewer delete. */
+    fun refreshAfterDelete() {
+        viewModelScope.launch { reload() }
+    }
+
     /**
-     * Deletes items (single or batch). System consent dialogs surface through
-     * [consentRequests]; the screen launches them and answers via [answerConsent].
-     * [onDone] receives true when everything is gone.
+     * Moves items to the Trash (Google-Photos style): the files stay on disk and are
+     * simply hidden from every scan, so this needs no MediaStore write permission and no
+     * consent dialog — which is what used to fail with "Permission denied". The items
+     * can be restored from the Trash screen until they are permanently deleted.
+     */
+    fun moveToTrash(rows: List<DevicePhotoRow>, onDone: (Boolean, String) -> Unit) {
+        if (rows.isEmpty()) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val items = rows.map {
+                TrashedItem(it.uri.toString(), it.name, it.mimeType, now)
+            }
+            val ok = repository.trashMedia(items)
+            reload()
+            val label = if (rows.size > 1) "Moved ${rows.size} items to trash" else "Moved to trash"
+            onDone(ok, if (ok) label else "Couldn't move to trash")
+        }
+    }
+
+    // ── Move to folder ────────────────────────────────────────────────────────────────
+
+    /**
+     * Write-consent dialogs surface through [consentRequests]; the screen launches them and
+     * answers via [answerConsent]. Android 10+ needs consent to move media the app doesn't own.
      */
     private val _consentRequests = MutableSharedFlow<IntentSender>(extraBufferCapacity = 1)
     val consentRequests: SharedFlow<IntentSender> = _consentRequests.asSharedFlow()
@@ -166,41 +193,51 @@ class DeviceGalleryViewModel @Inject constructor(
         consentGate = null
     }
 
-    fun requestDelete(uris: List<Uri>, onDone: (Boolean, String) -> Unit) {
-        if (uris.isEmpty()) return
+    /** Loads the folders a move can target (queries MediaStore, so it's async). */
+    fun loadMoveTargets(onReady: (List<DeviceFolderTarget>) -> Unit) {
+        viewModelScope.launch { onReady(repository.folderTargets()) }
+    }
+
+    /**
+     * Moves [rows] into [target]. A move rewrites MediaStore's RELATIVE_PATH, so other apps'
+     * media needs one write-consent dialog on Android 10+; consent surfaces on
+     * [consentRequests] and the retry happens through [answerConsent].
+     */
+    fun moveToFolder(
+        rows: List<DevicePhotoRow>,
+        target: DeviceFolderTarget,
+        onDone: (Boolean, String) -> Unit
+    ) {
+        if (rows.isEmpty()) return
+        val label = if (rows.size > 1) "Moved ${rows.size} items to ${target.displayName}"
+        else "Moved to ${target.displayName}"
         viewModelScope.launch {
-            var remaining = uris
-            repeat(uris.size + 2) {
-                when (val result = repository.deleteMedia(remaining)) {
-                    is DeleteResult.Deleted -> {
+            var pending = rows.map { it.uri }
+            repeat(3) {
+                when (val result = repository.moveMedia(pending, target)) {
+                    is MoveResult.Moved -> {
                         reload()
-                        val label = if (uris.size > 1) "Deleted ${uris.size} items" else "Deleted"
                         onDone(true, label)
                         return@launch
                     }
-                    is DeleteResult.NeedsConsent -> {
+                    is MoveResult.NeedsConsent -> {
                         val gate = CompletableDeferred<Boolean>()
                         consentGate = gate
                         _consentRequests.emit(result.intentSender)
                         if (!gate.await()) {
-                            onDone(false, "Delete cancelled")
+                            onDone(false, "Move cancelled")
                             return@launch
                         }
-                        remaining = result.pending
+                        pending = result.pending
                     }
-                    is DeleteResult.Failed -> {
+                    is MoveResult.Failed -> {
                         onDone(false, result.message)
                         return@launch
                     }
                 }
             }
-            onDone(false, "Delete failed")
+            onDone(false, "Move failed")
         }
-    }
-
-    /** Rescans after a consent grant or a viewer delete. */
-    fun refreshAfterDelete() {
-        viewModelScope.launch { reload() }
     }
 
     /** Rows inside the given folders for the selected tab (for folder share/info/delete). */

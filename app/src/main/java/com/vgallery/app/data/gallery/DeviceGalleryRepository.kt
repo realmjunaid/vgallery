@@ -3,6 +3,7 @@ package com.vgallery.app.data.gallery
 import android.Manifest
 import android.app.RecoverableSecurityException
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,6 +11,8 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import com.vgallery.app.data.preferences.AppPreferences
+import com.vgallery.app.data.gallery.TrashedItem
+import com.vgallery.app.data.gallery.filterTrashed
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -28,14 +31,19 @@ sealed interface DeleteResult {
     data class Failed(val message: String) : DeleteResult
 }
 
-/** MediaStore permissions for the auto device gallery (no manual folder pick needed). */
+/**
+ * MediaStore permissions for the auto device gallery (no manual folder pick needed).
+ *
+ * API 33+ uses the granular READ_MEDIA_* permissions. Below that, READ_EXTERNAL_STORAGE
+ * covers scanning, and WRITE_EXTERNAL_STORAGE is also requested because a direct (pre-consent)
+ * delete on Android 10 needs it — without it, deleting throws a plain SecurityException
+ * that used to surface as "Permission denied".
+ */
 fun deviceGalleryPermissions(): Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     } else {
-        // Pre-Q deletes go through the filesystem permission, not a consent dialog.
+        // API 29-32 and pre-Q: read via READ_EXTERNAL_STORAGE; write (delete forever) needs WRITE on 29.
         arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -76,7 +84,10 @@ class DeviceGalleryRepository @Inject constructor(
         loadImages(rows)
         loadVideos(rows)
         // Respect the Settings sort order (default A–Z); the queries stay newest-first.
-        sortDevicePhotos(rows, appPreferences.settings.first().sortOrder)
+        val sorted = sortDevicePhotos(rows, appPreferences.settings.first().sortOrder)
+        // Hide anything sitting in the Trash until it is restored or permanently deleted.
+        val trashed = appPreferences.trashedMedia.first().map { it.uri }.toSet()
+        filterTrashed(sorted, trashed)
             .also { cachedPhotos = it }
     }
 
@@ -250,6 +261,147 @@ class DeviceGalleryRepository @Inject constructor(
 
     /** Single-item convenience for [deleteMedia]. */
     suspend fun deleteMedia(uri: Uri): DeleteResult = deleteMedia(listOf(uri))
+
+    // ── Trash ─────────────────────────────────────────────────────────────────────────
+
+    /** Trashed items, oldest first (delegates to AppPreferences). */
+    val trashedMedia: kotlinx.coroutines.flow.Flow<List<TrashedItem>> = appPreferences.trashedMedia
+
+    /** Current set of trashed uris, for callers that need a snapshot. */
+    suspend fun trashedUriSet(): Set<String> = appPreferences.trashedMedia.first().map { it.uri }.toSet()
+
+    suspend fun trashMedia(items: List<TrashedItem>): Boolean = appPreferences.trashMedia(items)
+
+    suspend fun restoreTrashedMedia(uris: List<String>): Boolean = appPreferences.restoreTrashedMedia(uris)
+
+    suspend fun removeTrashedMedia(uris: List<String>): Boolean = appPreferences.removeTrashedMedia(uris)
+
+    suspend fun clearTrash(): Boolean = appPreferences.clearTrash()
+
+    // ── Move to folder ────────────────────────────────────────────────────────────────
+
+    /**
+     * The folders a move can target: the distinct buckets already in MediaStore, so every
+     * destination is a folder the gallery already shows. Empty without permission.
+     */
+    suspend fun folderTargets(): List<DeviceFolderTarget> = withContext(Dispatchers.IO) {
+        if (!hasPermission()) return@withContext emptyList()
+        val relativePaths = mutableListOf<String>()
+        val absoluteDirs = LinkedHashMap<String, String>()
+        val legacy = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+        for (collection in mediaCollections()) {
+            val projection = if (legacy) {
+                arrayOf(MediaStore.MediaColumns.DATA)
+            } else {
+                arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
+            }
+            try {
+                context.contentResolver.query(collection, projection, null, null, null)?.use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val value = cursor.getString(0)
+                        if (!legacy) {
+                            if (value != null) relativePaths += value
+                        } else if (value != null) {
+                            // Pre-Android-10: derive the folder from the absolute DATA path.
+                            val dir = value.substringBeforeLast('/')
+                            if (dir.isNotBlank()) {
+                                val norm = normalizeRelativePath(dir.substringAfter("/emulated/0/", dir))
+                                absoluteDirs.putIfAbsent(norm, dir)
+                                relativePaths += norm
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // One unreadable collection shouldn't hide the others.
+            }
+        }
+        buildFolderTargets(relativePaths).map { it.copy(absoluteDir = absoluteDirs[it.relativePath]) }
+    }
+
+    /**
+     * Moves items into [target]. On Android 10+ a move rewrites `RELATIVE_PATH`, which needs a
+     * consent dialog for media the app doesn't own ([MoveResult.NeedsConsent] carries the
+     * still-pending URIs). The cache is dropped on success so the next load rescans.
+     */
+    suspend fun moveMedia(uris: List<Uri>, target: DeviceFolderTarget): MoveResult =
+        withContext(Dispatchers.IO) {
+            if (uris.isEmpty()) return@withContext MoveResult.Moved
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                return@withContext moveLegacy(uris, target)
+            }
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, target.relativePath)
+            }
+            try {
+                val survivors = mutableListOf<Uri>()
+                for (uri in uris) {
+                    try {
+                        context.contentResolver.update(uri, values, null, null)
+                    } catch (e: RecoverableSecurityException) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            // Batch below: one consent dialog for all leftovers.
+                            survivors += uri
+                        } else {
+                            return@withContext MoveResult.NeedsConsent(
+                                e.userAction.actionIntent.intentSender, uris, target
+                            )
+                        }
+                    } catch (_: SecurityException) {
+                        return@withContext MoveResult.Failed("Permission denied")
+                    }
+                }
+                if (survivors.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val pending = MediaStore.createWriteRequest(context.contentResolver, survivors)
+                    return@withContext MoveResult.NeedsConsent(pending.intentSender, survivors, target)
+                }
+                cachedPhotos = null
+                MoveResult.Moved
+            } catch (e: Exception) {
+                MoveResult.Failed(e.message ?: "Move failed")
+            }
+        }
+
+    /** Pre-Android-10 move: rewrite the legacy absolute `DATA` path (needs WRITE_EXTERNAL_STORAGE). */
+    private fun moveLegacy(uris: List<Uri>, target: DeviceFolderTarget): MoveResult {
+        val dir = target.absoluteDir ?: return MoveResult.Failed("Moving isn't supported here")
+        return try {
+            for (uri in uris) {
+                val name = displayNameOf(uri) ?: return MoveResult.Failed("Move failed")
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DATA, "$dir/$name")
+                }
+                context.contentResolver.update(uri, values, null, null)
+            }
+            cachedPhotos = null
+            MoveResult.Moved
+        } catch (e: Exception) {
+            MoveResult.Failed(e.message ?: "Move failed")
+        }
+    }
+
+    private fun displayNameOf(uri: Uri): String? =
+        try {
+            context.contentResolver
+                .query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getString(0) else null }
+        } catch (_: Exception) {
+            null
+        }
+
+    /** The image and video collections to scan, across API levels. */
+    private fun mediaCollections(): List<Uri> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            listOf(
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL),
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            )
+        } else {
+            listOf(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            )
+        }
 
     /**
      * Fills in animated-WebP flags after the first paint: opening one stream per

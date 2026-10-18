@@ -24,6 +24,7 @@ class FakeScreens(
         const val HOME_OPEN = "fake_home_open"
         const val HOME_PLAY = "fake_home_play"
         const val HOME_SETTINGS = "fake_home_settings"
+        const val HOME_TRASH = "fake_home_trash"
         const val HOME_GALLERY = "fake_home_gallery"
         const val GRID_TILE = "fake_grid_tile"
         const val GRID_BACK = "fake_grid_back"
@@ -31,6 +32,7 @@ class FakeScreens(
         const val VIEWER_BACK = "fake_viewer_back"
         const val VIEWER_OTHER = "fake_viewer_other"
         const val SETTINGS_BACK = "fake_settings_back"
+        const val TRASH_BACK = "fake_trash_back"
     }
 
     /** The index a fake viewer reports on back. */
@@ -43,12 +45,14 @@ class FakeScreens(
         onFolderSelected: (Uri) -> Unit,
         onPlaySelected: (Uri, Int, Boolean) -> Unit,
         onSettingsClick: () -> Unit,
+        onTrashClick: () -> Unit,
         onDeviceGalleryClick: () -> Unit,
     ) {
         Column {
             Button(onClick = burstOf { onFolderSelected(folder) }, modifier = Modifier.testTag(Tags.HOME_OPEN)) { Text("open") }
             Button(onClick = burstOf { onPlaySelected(folder, 0, false) }, modifier = Modifier.testTag(Tags.HOME_PLAY)) { Text("play") }
             Button(onClick = burstOf(onSettingsClick), modifier = Modifier.testTag(Tags.HOME_SETTINGS)) { Text("settings") }
+            Button(onClick = burstOf(onTrashClick), modifier = Modifier.testTag(Tags.HOME_TRASH)) { Text("trash") }
             Button(onClick = burstOf(onDeviceGalleryClick), modifier = Modifier.testTag(Tags.HOME_GALLERY)) { Text("gallery") }
         }
     }
@@ -87,5 +91,10 @@ class FakeScreens(
     @Composable
     override fun Settings(onBack: () -> Unit) {
         Button(onClick = burstOf(onBack), modifier = Modifier.testTag(Tags.SETTINGS_BACK)) { Text("back") }
+    }
+
+    @Composable
+    override fun Trash(onBack: () -> Unit) {
+        Button(onClick = burstOf(onBack), modifier = Modifier.testTag(Tags.TRASH_BACK)) { Text("back") }
     }
 }

@@ -2,6 +2,11 @@ package com.vgallery.app.data.preferences
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
+import com.vgallery.app.data.gallery.TrashedItem
+import com.vgallery.app.data.gallery.appendTrashEntries
+import com.vgallery.app.data.gallery.decodeTrashList
+import com.vgallery.app.data.gallery.encodeTrashItem
+import com.vgallery.app.data.gallery.removeTrashEntries
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -34,8 +39,8 @@ data class AppSettings(
 )
 
 /**
- * Settings and Recents over the app's single settings [DataStore] (provided by `AppModule`, with a
- * corruption handler that replaces an unreadable file with empty preferences).
+ * Settings, Recents and Trash over the app's single settings [DataStore] (provided by `AppModule`,
+ * with a corruption handler that replaces an unreadable file with empty preferences).
  *
  * Storage failures never crash: a read `IOException` falls back to defaults, and every edit
  * returns `false` instead of throwing, so the UI keeps its last-known value.
@@ -55,6 +60,7 @@ class AppPreferences @Inject constructor(
         val ASPECT_RATIO_MODE = stringPreferencesKey("aspect_ratio_mode")
         val LANDSCAPE_VIDEO_MODE = booleanPreferencesKey("landscape_video_mode")
         val RECENT_FOLDERS = stringPreferencesKey("recent_folders")
+        val TRASHED_MEDIA = stringPreferencesKey("trashed_media")
     }
 
     /** The stored preferences; an `IOException` while reading yields empty preferences (defaults). */
@@ -87,6 +93,11 @@ class AppPreferences @Inject constructor(
     val recentFolders: Flow<List<String>> = data.map { prefs ->
         val raw = prefs[Keys.RECENT_FOLDERS] ?: ""
         if (raw.isBlank()) emptyList() else raw.split("|||")
+    }
+
+    /** Trashed items, oldest first (insertion order preserved by the store). */
+    val trashedMedia: Flow<List<TrashedItem>> = data.map { prefs ->
+        decodeTrashList(prefs[Keys.TRASHED_MEDIA] ?: "")
     }
 
     /** Runs an edit; returns `false` (and changes nothing) if storage fails. */
@@ -183,6 +194,36 @@ class AppPreferences @Inject constructor(
             RecentFolderInfo(parts[0], parts[1], lastIndex, lastItemUri)
         } else null
     }
+
+    // ── Trash ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Moves items to trash: replaces any existing entry for the same uri, preserving
+     * insertion order for items that are re-trashed.
+     */
+    suspend fun trashMedia(items: List<TrashedItem>): Boolean = safeEdit { prefs ->
+        val raw = prefs[Keys.TRASHED_MEDIA] ?: ""
+        prefs[Keys.TRASHED_MEDIA] = appendTrashEntries(raw, items)
+    }
+
+    /** Restores items from trash: removes their entries. Returns true if at least one changed. */
+    suspend fun restoreTrashedMedia(uris: List<String>): Boolean {
+        if (uris.isEmpty()) return false
+        val raw = data.first().let { it[Keys.TRASHED_MEDIA] ?: "" }
+        val updated = removeTrashEntries(raw, uris.toSet())
+        return safeEdit { it[Keys.TRASHED_MEDIA] = updated }
+    }
+
+    /** Drops items from the trash list without touching MediaStore (used after a successful hard delete). */
+    suspend fun removeTrashedMedia(uris: List<String>): Boolean {
+        if (uris.isEmpty()) return false
+        val raw = data.first().let { it[Keys.TRASHED_MEDIA] ?: "" }
+        val updated = removeTrashEntries(raw, uris.toSet())
+        return safeEdit { it[Keys.TRASHED_MEDIA] = updated }
+    }
+
+    /** Clears the entire trash list. */
+    suspend fun clearTrash(): Boolean = safeEdit { it[Keys.TRASHED_MEDIA] = "" }
 }
 
 data class RecentFolderInfo(
