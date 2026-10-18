@@ -51,10 +51,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
@@ -69,6 +71,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -94,7 +97,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -136,6 +141,8 @@ import coil3.request.crossfade
 import coil3.size.Dimension
 import coil3.size.Precision
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DeviceFolderTarget
@@ -148,6 +155,7 @@ import com.vgallery.app.data.gallery.hasDeviceGalleryPermission
 import com.vgallery.app.ui.theme.Black
 import com.vgallery.app.ui.theme.ErrorRed
 import com.vgallery.app.ui.theme.NewFolderDot
+import com.vgallery.app.ui.theme.SurfaceElevated
 import com.vgallery.app.ui.theme.SurfaceVariant
 import com.vgallery.app.ui.theme.TextDisabled
 import com.vgallery.app.ui.theme.TextMuted
@@ -187,6 +195,8 @@ fun DeviceGalleryScreen(
     // Home search (icon toggles the field): matches photos across every folder.
     var showHomeSearch by remember { mutableStateOf(false) }
     var homeQuery by remember { mutableStateOf("") }
+    // Folder view mode: the default grid, or a line-by-line list that also shows name and size.
+    var listMode by rememberSaveable { mutableStateOf(false) }
     // Shared delete targets (grid, folders, albums) with one confirm dialog.
     var deleteTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
     var infoTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
@@ -200,6 +210,11 @@ fun DeviceGalleryScreen(
 
     fun selectedAlbumRows(): List<DevicePhotoRow> =
         uiState.photos.filter { it.id in selectedPhotoIds }
+
+    /** Whatever is currently selected: whole folders on home, single items inside a folder. */
+    fun selectionRows(): List<DevicePhotoRow> =
+        if (selectedFolders.isNotEmpty()) viewModel.photosInFolders(selectedFolders)
+        else selectedAlbumRows()
 
     fun performDelete(targets: List<DevicePhotoRow>) {
         viewModel.moveToTrash(targets) { ok, msg ->
@@ -292,17 +307,21 @@ fun DeviceGalleryScreen(
         Scaffold(
             containerColor = Black,
         topBar = {
-            if (selectedFolders.isNotEmpty()) {
+            // A selection replaces the app bar instead of being stacked under it: two bars
+            // pushed the grid down and left a big empty gap at the top.
+            val foldersSelected = selectedFolders.isNotEmpty()
+            if (foldersSelected || selectedPhotoIds.isNotEmpty()) {
                 SelectionBar(
-                    count = selectedFolders.size,
-                    noun = "folders",
-                    onShare = {
-                        sharePhotos(context, viewModel.photosInFolders(selectedFolders))
-                    },
-                    onMove = { startMove(viewModel.photosInFolders(selectedFolders)) },
-                    onInfo = { infoTargets = viewModel.photosInFolders(selectedFolders) },
-                    onDelete = { deleteTargets = viewModel.photosInFolders(selectedFolders) },
-                    onClear = { selectedFolders = emptySet() }
+                    count = if (foldersSelected) selectedFolders.size else selectedPhotoIds.size,
+                    noun = if (foldersSelected) "folders" else "items",
+                    onShare = { sharePhotos(context, selectionRows()) },
+                    onMove = { startMove(selectionRows()) },
+                    onInfo = { infoTargets = selectionRows() },
+                    onDelete = { deleteTargets = selectionRows() },
+                    onClear = {
+                        selectedFolders = emptySet()
+                        selectedPhotoIds = emptySet()
+                    }
                 )
             } else {
             TopAppBar(
@@ -352,6 +371,20 @@ fun DeviceGalleryScreen(
                         }
                     }
                     if (isHome && selectedFolders.isEmpty()) {
+                        // Grid <-> line-by-line list for the folder being viewed, next to Delete.
+                        if (uiState.selectedAlbum != null) {
+                            IconButton(onClick = { listMode = !listMode }) {
+                                Icon(
+                                    imageVector = if (listMode) {
+                                        Icons.Filled.GridView
+                                    } else {
+                                        Icons.AutoMirrored.Filled.ViewList
+                                    },
+                                    contentDescription = if (listMode) "Show as grid" else "Show as list",
+                                    tint = TextSecondary
+                                )
+                            }
+                        }
                         IconButton(onClick = onTrashClick) {
                             Icon(
                                 imageVector = Icons.Filled.Delete,
@@ -477,38 +510,36 @@ fun DeviceGalleryScreen(
                     if (uiState.photos.isEmpty()) {
                         EmptyState(message = "No media in this folder")
                     } else {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            if (selectedPhotoIds.isNotEmpty()) {
-                                SelectionBar(
-                                    count = selectedPhotoIds.size,
-                                    noun = "items",
-                                    onShare = {
-                                        sharePhotos(context, selectedAlbumRows())
-                                    },
-                                    onMove = { startMove(selectedAlbumRows()) },
-                                    onInfo = { infoTargets = selectedAlbumRows() },
-                                    onDelete = { deleteTargets = selectedAlbumRows() },
-                                    onClear = { selectedPhotoIds = emptySet() }
-                                )
+                        // Grid or line-by-line list: whichever the folder's toggle last chose.
+                        val onPhotoClick: (Int) -> Unit = { gridIndex ->
+                            val id = visiblePhotos.getOrNull(gridIndex)?.id
+                            if (id != null) {
+                                if (selectedPhotoIds.isNotEmpty()) {
+                                    selectedPhotoIds = selectedPhotoIds.toggle(id)
+                                } else {
+                                    searchViewerPhotos = null
+                                    viewerIndex = gridIndex
+                                }
                             }
+                        }
+                        val onPhotoLongClick: (Int) -> Unit = { gridIndex ->
+                            visiblePhotos.getOrNull(gridIndex)?.let {
+                                selectedPhotoIds = selectedPhotoIds + it.id
+                            }
+                        }
+                        if (listMode) {
+                            MediaList(
+                                photos = visiblePhotos,
+                                selectedIds = selectedPhotoIds,
+                                onPhotoClick = onPhotoClick,
+                                onPhotoLongClick = onPhotoLongClick
+                            )
+                        } else {
                             PhotoGrid(
                                 photos = visiblePhotos,
                                 selectedIds = selectedPhotoIds,
-                                onPhotoClick = { gridIndex ->
-                                    val id = visiblePhotos.getOrNull(gridIndex)?.id
-                                        ?: return@PhotoGrid
-                                    if (selectedPhotoIds.isNotEmpty()) {
-                                        selectedPhotoIds = selectedPhotoIds.toggle(id)
-                                    } else {
-                                        searchViewerPhotos = null
-                                        viewerIndex = gridIndex
-                                    }
-                                },
-                                onPhotoLongClick = { gridIndex ->
-                                    visiblePhotos.getOrNull(gridIndex)?.let {
-                                        selectedPhotoIds = selectedPhotoIds + it.id
-                                    }
-                                }
+                                onPhotoClick = onPhotoClick,
+                                onPhotoLongClick = onPhotoLongClick
                             )
                         }
                     }
@@ -902,6 +933,89 @@ private fun PhotoGrid(
     }
 }
 
+/**
+ * The same folder contents as [PhotoGrid], one file per line: a thumbnail, the file's title and
+ * its size, so a folder reads like a file manager. Tapping and long-pressing behave exactly like
+ * the grid, so selection, Trash and Move work the same here.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MediaList(
+    photos: List<DevicePhotoRow>,
+    onPhotoClick: (Int) -> Unit,
+    selectedIds: Set<Long>,
+    onPhotoLongClick: (Int) -> Unit
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
+            val isSelected = photo.id in selectedIds
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (isSelected) Violet500.copy(alpha = 0.18f) else Color.Transparent)
+                    .combinedClickable(
+                        onClick = { onPhotoClick(index) },
+                        onLongClick = { onPhotoLongClick(index) }
+                    )
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.DarkGray)
+                ) {
+                    StaticGalleryImage(
+                        uri = photo.uri,
+                        isVideo = photo.isVideo,
+                        contentDescription = photo.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    if (photo.isVideo) {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(20.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = photo.name,
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = formatBytes(photo.size),
+                        color = TextMuted,
+                        fontSize = 12.sp
+                    )
+                }
+                if (isSelected) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "Selected",
+                        tint = Violet500,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+        }
+    }
+}
+
 private fun formatGridDuration(millis: Long): String {
     if (millis <= 0) return "0:00"
     val totalSeconds = millis / 1000
@@ -909,6 +1023,23 @@ private fun formatGridDuration(millis: Long): String {
     val seconds = totalSeconds % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
+
+/**
+ * MediaStore's aspect ratio (width / height), used to lay a feed item out *before* its bitmap
+ * decodes. Without it every item starts at zero height and the whole list re-measures as the
+ * images land — that reflow is what made long flings stutter. Clamped so a bogus row can never
+ * produce an absurd item; null when the device reports no usable size.
+ */
+private fun knownAspectRatio(width: Int, height: Int): Float? {
+    if (width <= 0 || height <= 0) return null
+    return (width.toFloat() / height.toFloat()).coerceIn(0.25f, 4f)
+}
+
+/** Autoplay: how long a still photo (or an animation) holds the screen before the feed moves on. */
+private const val AUTO_PLAY_PHOTO_MS = 3_500L
+
+/** Autoplay: safety net for a video that never reports its end (a codec the device can't finish). */
+private const val AUTO_PLAY_VIDEO_FALLBACK_MS = 30_000L
 
 /**
  * Global feed gesture, Google Drive PDF-viewer style.
@@ -946,8 +1077,8 @@ private fun Modifier.feedZoomGesture(state: FeedZoomState): Modifier = pointerIn
 
 /**
  * One video inside the continuous feed: full-width like every photo, as many
- * per screen as fit. Tapping binds the shared player and plays; everything
- * else stays paused. Aspect is learned from the video once it plays.
+ * per screen as fit. A poster frame shows until the item is tapped; tapping binds
+ * the shared player and plays, everything else stays paused.
  */
 @Composable
 private fun FeedVideoItem(
@@ -959,7 +1090,11 @@ private fun FeedVideoItem(
     onTogglePlay: () -> Unit,
     onDoubleTapChrome: () -> Unit
 ) {
-    val aspect = videoAspects[photo.id] ?: (16f / 9f)
+    // MediaStore's own shape first, so the box is the right size before anything decodes and the
+    // feed never re-measures mid-fling; the player's report takes over once it plays.
+    val aspect = videoAspects[photo.id]
+        ?: knownAspectRatio(photo.width, photo.height)
+        ?: (16f / 9f)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -967,9 +1102,8 @@ private fun FeedVideoItem(
             .background(Color.Black)
             .clipToBounds()
     ) {
-        // Thumbnail, duration badge and player share one layer; the feed zooms them as a whole.
-        Box(modifier = Modifier.fillMaxSize()) {
-        // Frame thumbnail underneath (also covers the pre-play state).
+        // Poster frame underneath, always visible: it shows while the video loads and whenever
+        // this is not the item being played.
         StaticGalleryImage(
             uri = photo.uri,
             isVideo = true,
@@ -1004,23 +1138,30 @@ private fun FeedVideoItem(
                 )
             }
         }
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            update = { playerView ->
-                playerView.player = if (isPlaying) exoPlayer else null
-            },
-            onRelease = { playerView -> playerView.player = null },
-            modifier = Modifier.fillMaxSize()
-        )
+        // The player exists only while this is the item being played. An idle PlayerView drew its
+        // own black shutter over the poster — which is why videos stayed black — and a stack of
+        // them made long flings stutter.
+        if (isPlaying) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        // A SurfaceView inside a scrolling list can lag behind the view hierarchy;
+                        // this is media3's own workaround for exactly that when hosted in Compose.
+                        setEnableComposeSurfaceSyncWorkaround(true)
+                        // No black shutter: the poster stays visible until the first frame lands.
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                update = { playerView -> playerView.player = exoPlayer },
+                onRelease = { playerView -> playerView.player = null },
+                modifier = Modifier.fillMaxSize()
+            )
         }
         // Transparent tap layer above the player (Android views swallow touches,
         // so without this, taps on a video never toggle playback).
@@ -1095,13 +1236,20 @@ private fun DevicePhotoViewer(
     var uiVisible by remember { mutableStateOf(true) }
     // One global pinch-zoom (1x-10x) owned by the feed, Google Drive PDF-viewer style.
     val feedZoom = remember { FeedZoomState() }
+    // derivedStateOf so the feed only recomposes when the zoom *starts or ends*, never on every
+    // pinch frame; at 1x the list then needs no render layer at all.
+    val zoomed by remember { derivedStateOf { feedZoom.isZoomed } }
     // Fresh toggle inside gesture detectors (pointerInput blocks outlive recompositions).
     val toggleChrome = rememberUpdatedState({ uiVisible = !uiVisible })
-    // No autoplay while scrolling: only the explicitly opened/tapped photo plays,
-    // like Google Photos. Starts with the photo tapped in the grid.
+    // Playback follows the tapped item (Google Photos style) unless Autoplay is running, which
+    // walks the whole feed: videos to their end, stills on a timer.
     var playingIndex by remember {
         mutableIntStateOf(startIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
     }
+    // Autoplay: plays the feed one item after another — videos to their end, stills and
+    // animations on a timer — and scrolls along with them.
+    var autoPlay by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     // Delete / info UI state.
     var pendingDelete by remember { mutableStateOf<DevicePhotoRow?>(null) }
     var infoPhoto by remember { mutableStateOf<DevicePhotoRow?>(null) }
@@ -1121,6 +1269,42 @@ private fun DevicePhotoViewer(
     fun confirmDelete(photo: DevicePhotoRow) {
         pendingDelete = photo
     }
+
+    /** Autoplay step: hand playback to the next item and bring it into view. */
+    fun advanceAutoPlay() {
+        if (!autoPlay) return
+        val next = playingIndex + 1
+        if (next > photos.lastIndex) {
+            autoPlay = false
+            toast("Autoplay finished")
+            return
+        }
+        playingIndex = next
+        scope.launch { listState.animateScrollToItem(next) }
+    }
+
+    /** Tap on one item: play it, or pause it — pausing also stops an autoplay run. */
+    fun togglePlay(index: Int) {
+        if (index == playingIndex) {
+            playingIndex = -1
+            autoPlay = false
+        } else {
+            playingIndex = index
+        }
+    }
+
+    /** The autoplay button: start from whatever the feed is showing now, or stop the run. */
+    fun toggleAutoPlay() {
+        if (autoPlay) {
+            autoPlay = false
+            return
+        }
+        if (photos.isNotEmpty()) playingIndex = currentIndex
+        autoPlay = true
+    }
+
+    // The player callback outlives recomposition, so it always runs the newest step.
+    val advanceAutoPlayRef = rememberUpdatedState(newValue = { advanceAutoPlay() })
     // One shared player for inline videos: the tapped video binds and plays,
     // everything else stays paused. Aspect is learned per video once it plays.
     val videoAspects = remember { mutableStateMapOf<Long, Float>() }
@@ -1133,6 +1317,12 @@ private fun DevicePhotoViewer(
                     videoAspects[playingVideoId] =
                         videoSize.width.toFloat() / videoSize.height.toFloat()
                 }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // A finished video hands over to the next item while autoplay runs
+                // (advanceAutoPlay is a no-op when it is off).
+                if (playbackState == Player.STATE_ENDED) advanceAutoPlayRef.value()
             }
         }
         exoPlayer.addListener(listener)
@@ -1153,6 +1343,22 @@ private fun DevicePhotoViewer(
             playingVideoId = -1L
             exoPlayer.pause()
         }
+    }
+    // Autoplay pacing: a still (or an animation) holds the screen for a moment, while a video is
+    // advanced by the player the instant it ends. The video timer below is only a safety net for
+    // one that never reports its end — a codec the device cannot decode to the last frame.
+    LaunchedEffect(autoPlay, playingIndex) {
+        if (!autoPlay) return@LaunchedEffect
+        val item = photos.getOrNull(playingIndex) ?: return@LaunchedEffect
+        val startedAt = playingIndex
+        val waitMs = if (item.isVideo) {
+            (item.durationMs.takeIf { it > 0L } ?: AUTO_PLAY_VIDEO_FALLBACK_MS) + 2_000L
+        } else {
+            AUTO_PLAY_PHOTO_MS
+        }
+        delay(waitMs)
+        // Still on the same item after the wait: nothing ended on its own, so move on.
+        if (playingIndex == startedAt) advanceAutoPlay()
     }
     // Immersive mode: hiding the UI also hides status + navigation bars,
     // so the whole display shows only images. Restored on dismiss.
@@ -1263,16 +1469,24 @@ private fun DevicePhotoViewer(
             LazyColumn(
                 state = listState,
                 // One global pinch-zoom drives the whole feed: the scaled layer below zooms every
-                // item together while this list keeps handling vertical scrolling.
+                // item together while this list keeps handling vertical scrolling. The layer is
+                // only attached while zoomed — an identity layer would still be paid for on
+                // every frame of a normal scroll.
                 modifier = Modifier
                     .fillMaxSize()
                     .onSizeChanged { feedZoom.onViewport(it.width) }
-                    .graphicsLayer {
-                        scaleX = feedZoom.scale
-                        scaleY = feedZoom.scale
-                        translationX = feedZoom.offsetX
-                        translationY = 0f
-                    },
+                    .then(
+                        if (zoomed) {
+                            Modifier.graphicsLayer {
+                                scaleX = feedZoom.scale
+                                scaleY = feedZoom.scale
+                                translationX = feedZoom.offsetX
+                                translationY = 0f
+                            }
+                        } else {
+                            Modifier
+                        }
+                    ),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
@@ -1284,7 +1498,7 @@ private fun DevicePhotoViewer(
                             uiVisible = uiVisible,
                             exoPlayer = exoPlayer,
                             videoAspects = videoAspects,
-                            onTogglePlay = { playingIndex = if (isPlaying) -1 else index },
+                            onTogglePlay = { togglePlay(index) },
                             onDoubleTapChrome = { toggleChrome.value() }
                         )
                     } else {
@@ -1346,6 +1560,14 @@ private fun DevicePhotoViewer(
                     DisposableEffect(directDrawable) {
                         onDispose { (directDrawable as? Animatable)?.stop() }
                     }
+                    // Hold the item's MediaStore shape until its pixels (or its animation) are
+                    // ready: an unresolved image measures to no height, so the whole feed used to
+                    // re-measure as bitmaps landed — that churn is what made long flings stutter.
+                    val placeholderAspect = remember(photo.id) {
+                        knownAspectRatio(photo.width, photo.height)
+                    }
+                    val contentReady = painterState is AsyncImagePainter.State.Success ||
+                        directDrawable != null
                     // Tap a photo to play it (GIF/WebP/video). Chrome toggles
                     // with double-tap (also here: child taps never reach the feed).
                     val tapModifier = Modifier
@@ -1353,13 +1575,20 @@ private fun DevicePhotoViewer(
                         .background(Color.DarkGray)
                         .pointerInput(photo.id) {
                             detectTapGestures(
-                                onTap = { playingIndex = index },
+                                onTap = { togglePlay(index) },
                                 onDoubleTap = { toggleChrome.value() }
                             )
                         }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(
+                                if (!contentReady && placeholderAspect != null) {
+                                    Modifier.aspectRatio(placeholderAspect)
+                                } else {
+                                    Modifier
+                                }
+                            )
                             .clipToBounds()
                     ) {
                     // The image layer; the feed zooms it along with every other item.
@@ -1395,7 +1624,7 @@ private fun DevicePhotoViewer(
                     if (uiVisible && (photo.mimeType == "image/gif" || photo.isAnimatedWebp)) {
                         val playing = index == playingIndex
                         IconButton(
-                            onClick = { playingIndex = if (playing) -1 else index },
+                            onClick = { togglePlay(index) },
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(end = 8.dp, bottom = 8.dp)
@@ -1434,29 +1663,62 @@ private fun DevicePhotoViewer(
                         .padding(end = 6.dp)
                 )
             }
-            // Small title of the current photo at the bottom; fades with pure-image mode.
-            AnimatedVisibility(
-                visible = uiVisible,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
+            // Bottom centre: the current item's name plus the autoplay control. Both fade with the
+            // chrome — except that the autoplay control stays while a run is in progress, so it
+            // can always be stopped.
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                photos.getOrNull(currentIndex)?.let { current ->
-                    Text(
-                        text = current.name,
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            shadow = Shadow(
-                                color = Color.Black.copy(alpha = 0.8f),
-                                offset = Offset(1f, 1f),
-                                blurRadius = 3f
-                            )
-                        ),
-                        modifier = Modifier.padding(horizontal = 48.dp, vertical = 12.dp)
-                    )
+                AnimatedVisibility(
+                    visible = uiVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    photos.getOrNull(currentIndex)?.let { current ->
+                        Text(
+                            text = current.name,
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                shadow = Shadow(
+                                    color = Color.Black.copy(alpha = 0.8f),
+                                    offset = Offset(1f, 1f),
+                                    blurRadius = 3f
+                                )
+                            ),
+                            modifier = Modifier.padding(horizontal = 48.dp)
+                        )
+                    }
+                }
+                if (uiVisible || autoPlay) {
+                    Row(
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(if (autoPlay) Violet500 else Color.Black.copy(alpha = 0.55f))
+                            .clickable { toggleAutoPlay() }
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (autoPlay) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = if (autoPlay) Color.Black else Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (autoPlay) "Autoplay on" else "Autoplay",
+                            color = if (autoPlay) Color.Black else Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }

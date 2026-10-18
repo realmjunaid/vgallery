@@ -21,9 +21,11 @@
 - **Reels-style vertical scrolling** ⭐ — the heart of VGallery. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
 - **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure. Each folder card shows its item count and total size, folders are ordered newest-added first with fresh ones raised to the top behind a small green dot until you open them, and a folder's contents always list A–Z.
 - **Photos & Videos tabs** — home splits the library in two: *Photos* for still images, *Videos* for everything that plays (videos, GIFs and animated WebPs), each as its own folder grid.
-- **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression.
+- **Grid or list view** — a toggle next to Delete switches a folder between the thumbnail grid and a line-by-line list showing each file's title and size.
+- **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression. Videos show their poster frame instead of a black box, and start playing only when you tap them.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
-- **Middle-only playback** — GIFs and animated WebPs play only when centered on screen; the rest stay paused to save battery.
+- **Tap to play** — only the item you tap plays (video, GIF or animated WebP); everything else stays paused to save battery.
+- **Autoplay** ▶️ — one button in the viewer plays the whole feed hands-free: videos run to their end and stills move on after a moment, scrolling to each item automatically until you tap the button again.
 - **Pinch-to-zoom** — one global pinch scales the whole vertical feed together, photos and videos alike, from 1x up to 10x and anchored under your fingers. While zoomed, drag sideways to pan (clamped so no blank space shows) and drag or fling up and down to keep scrolling through every item — a diagonal drag does both at once. Pinch back to fit to scroll normally again.
 - **Share, delete, search** — system share sheet, global name search from home, long-press multi-select in folders and on home with batch actions.
 - **Trash** 🗑️ — deleting moves items to a Google-Photos-style Trash instead of wiping them: everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent).
@@ -82,7 +84,7 @@ Run the unit tests:
 app/src/main/java/com/vgallery/app/
 ├── data/gallery/      # MediaStore repository, album grouping
 ├── ui/gallery/        # Auto gallery: albums → grid → full view
-├── ui/settings/       # Settings (display, playback, about)
+├── ui/settings/       # About pages (app & developer)
 ├── ui/viewer/         # Legacy folder viewer components
 ├── navigation/        # Nav graph & routes
 ├── player/            # ExoPlayer pool (legacy viewer)
