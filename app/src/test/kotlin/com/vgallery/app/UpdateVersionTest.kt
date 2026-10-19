@@ -176,4 +176,13 @@ class UpdateVersionTest {
         assertNull(newestVersionName(listOf("latest", "2024", "")))
         assertNull(newestVersionName(emptyList()))
     }
+
+    @Test
+    fun preReleaseTagsAreNeverOfferedAsAnUpdate() {
+        // Ranking `v1.1.0-rc1` would offer an update the mirror publishes no APK for: the download
+        // could only fail. Only a final release may win.
+        assertNull(newestVersionName(listOf("v1.1.0-rc1", "v1.0.8-beta.2")))
+        assertEquals("1.1.0", newestVersionName(listOf("v1.1.0-rc1", "v1.1.0", "v1.0.8")))
+        assertEquals("1.0.9", newestVersionName(listOf("v1.0.10+build.7", "v1.0.9")))
+    }
 }

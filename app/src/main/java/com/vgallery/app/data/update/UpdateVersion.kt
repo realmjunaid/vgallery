@@ -81,14 +81,20 @@ fun isNewerVersion(current: String?, latest: String?): Boolean {
 
 /**
  * The highest version among release tag names, so a mirror's tag list can stand in for its releases.
- * Unparseable tags (`latest`, a branch name, a year) are ignored rather than counted.
+ * Unparseable tags (`latest`, a branch name, a year) are ignored rather than counted, and so is any
+ * tag with a pre-release suffix: `v1.1.0-rc1` has no APK published under it, so ranking it would
+ * offer an update that can only fail to download.
  */
 fun newestVersionName(tags: List<String>): String? = tags
     .mapNotNull { tag ->
         val name = tag.trim().removePrefix("v").removePrefix("V")
-        if (name.isEmpty() || parseVersion(name) == null) null else name
+        if (name.isEmpty() || !isFinalReleaseName(name)) null else name
     }
     .maxWithOrNull { left, right -> compareVersions(parseVersion(left)!!, parseVersion(right)!!) }
+
+/** True for a plain final release name: at least two numeric parts and no `-beta`/`+build` suffix. */
+fun isFinalReleaseName(name: String): Boolean =
+    !name.contains('-') && !name.contains('+') && parseVersion(name) != null
 
 /** The one asset worth downloading: the release APK first, any other APK after that. */
 fun pickApkAsset(assets: List<ReleaseAsset>): ReleaseAsset? =

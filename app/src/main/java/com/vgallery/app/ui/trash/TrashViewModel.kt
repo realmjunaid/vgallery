@@ -76,6 +76,9 @@ class TrashViewModel @Inject constructor(
                         return@launch
                     }
                     is DeleteResult.NeedsConsent -> {
+                        // A new prompt replaces the one on screen: the abandoned waiter must not
+                        // hang forever, so it is answered as "not granted".
+                        consentGate?.complete(false)
                         val gate = CompletableDeferred<Boolean>()
                         consentGate = gate
                         _consentRequests.emit(result.intentSender)

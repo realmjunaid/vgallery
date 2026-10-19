@@ -42,10 +42,6 @@ data class DevicePhotoRow(
     /** GIF and animated WebP: MediaStore files them as images, but they play back. */
     val isMotionImage: Boolean
         get() = mimeType == "image/gif" || isAnimatedWebp
-
-    /** True for pager items (one-by-one view): videos and animated WebPs. */
-    val isPagedItem: Boolean
-        get() = isVideo || isAnimatedWebp
 }
 
 /**

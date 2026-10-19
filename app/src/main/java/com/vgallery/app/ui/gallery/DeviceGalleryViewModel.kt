@@ -255,7 +255,11 @@ class DeviceGalleryViewModel @Inject constructor(
         else "Moved to ${target.displayName}"
         viewModelScope.launch {
             var pending = rows.map { it.uri }
-            repeat(3) {
+            // Android 10 asks consent one item at a time, so a round is needed per item; stopping
+            // at three used to leave the rest of the selection unmoved and report "Move failed".
+            var rounds = 0
+            while (rounds <= rows.size) {
+                rounds++
                 when (val result = repository.moveMedia(pending, target)) {
                     is MoveResult.Moved -> {
                         reload()
@@ -263,6 +267,9 @@ class DeviceGalleryViewModel @Inject constructor(
                         return@launch
                     }
                     is MoveResult.NeedsConsent -> {
+                        // Only one consent dialog can be on screen at a time: a second request
+                        // cancels the first, which otherwise waited for an answer that never came.
+                        consentGate?.complete(false)
                         val gate = CompletableDeferred<Boolean>()
                         consentGate = gate
                         _consentRequests.emit(result.intentSender)

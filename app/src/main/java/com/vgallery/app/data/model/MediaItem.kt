@@ -34,10 +34,3 @@ data class MediaItem(
         }
     }
 }
-
-data class FolderInfo(
-    val uri: Uri,
-    val displayName: String,
-    val mediaCount: Int,
-    val lastAccessed: Long = System.currentTimeMillis()
-)

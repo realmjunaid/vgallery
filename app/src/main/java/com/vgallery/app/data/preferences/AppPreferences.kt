@@ -196,10 +196,6 @@ class AppPreferences @Inject constructor(
         prefs[Keys.RECENT_FOLDERS] = updated.joinToString("|||")
     }
 
-    /** Legacy entry point: saves only the index (no item URI). */
-    suspend fun updateLastViewedIndex(uriString: String, index: Int): Boolean =
-        updateLastViewed(uriString, index, null)
-
     suspend fun removeRecentFolder(uriString: String): Boolean = safeEdit { prefs ->
         val existing = (prefs[Keys.RECENT_FOLDERS] ?: "")
             .split("|||")
@@ -290,20 +286,23 @@ class AppPreferences @Inject constructor(
         prefs[Keys.TRASHED_MEDIA] = appendTrashEntries(raw, items)
     }
 
-    /** Restores items from trash: removes their entries. Returns true if at least one changed. */
+    /**
+     * Restores items from trash: removes their entries. The read-modify-write happens inside
+     * DataStore's own transaction, so a delete that lands at the same moment cannot be lost.
+     */
     suspend fun restoreTrashedMedia(uris: List<String>): Boolean {
         if (uris.isEmpty()) return false
-        val raw = data.first().let { it[Keys.TRASHED_MEDIA] ?: "" }
-        val updated = removeTrashEntries(raw, uris.toSet())
-        return safeEdit { it[Keys.TRASHED_MEDIA] = updated }
+        return safeEdit { prefs ->
+            prefs[Keys.TRASHED_MEDIA] = removeTrashEntries(prefs[Keys.TRASHED_MEDIA] ?: "", uris.toSet())
+        }
     }
 
     /** Drops items from the trash list without touching MediaStore (used after a successful hard delete). */
     suspend fun removeTrashedMedia(uris: List<String>): Boolean {
         if (uris.isEmpty()) return false
-        val raw = data.first().let { it[Keys.TRASHED_MEDIA] ?: "" }
-        val updated = removeTrashEntries(raw, uris.toSet())
-        return safeEdit { it[Keys.TRASHED_MEDIA] = updated }
+        return safeEdit { prefs ->
+            prefs[Keys.TRASHED_MEDIA] = removeTrashEntries(prefs[Keys.TRASHED_MEDIA] ?: "", uris.toSet())
+        }
     }
 
     /** Clears the entire trash list. */

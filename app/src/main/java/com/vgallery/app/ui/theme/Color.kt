@@ -51,12 +51,6 @@ data class GalleryColors(
 /** The viewer's backdrop. */
 val ViewerBackdrop = Color(0xFF000000)
 
-/** Icons and text on the viewer's backdrop. */
-val ViewerChrome = Color(0xFFFFFFFF)
-
-/** Secondary viewer chrome: the state tints that are not the accent. */
-val ViewerChromeDim = Color(0xFFD4D4D4)
-
 // ── Palette construction ──────────────────────────────────────────────────────────────────
 
 private val NewFolderGreen = Color(0xFF34C759)
@@ -134,17 +128,8 @@ val Violet600: Color
 val Violet400: Color
     @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.accentSoft
 
-val Violet300: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.accentFaint
-
-val Violet700: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.accentStrong
-
 val Black: Color
     @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.background
-
-val Surface: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.surface
 
 val SurfaceVariant: Color
     @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.surfaceVariant
@@ -174,20 +159,5 @@ val TextDisabled: Color
 val ErrorRed: Color
     @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.error
 
-val SuccessGreen: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.success
-
-val WarningAmber: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.warning
-
 val NewFolderDot: Color
     @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.newFolderDot
-
-val OverlayBlack: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.overlay
-
-val OverlayGradientTop: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.overlayGradientTop
-
-val OverlayGradientBottom: Color
-    @Composable @ReadOnlyComposable get() = LocalGalleryColors.current.overlayGradientBottom

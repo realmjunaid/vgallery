@@ -75,29 +75,3 @@ fun TrashPurgePrompt(
         },
     )
 }
-
-/** The same prompt with the decision already made, so a screenshot can show it without a store. */
-@Composable
-internal fun TrashPurgePromptContent(
-    count: Int,
-    onDelete: () -> Unit,
-    onLater: () -> Unit,
-) {
-    val noun = if (count == 1) "item has" else "items have"
-    AlertDialog(
-        onDismissRequest = onLater,
-        title = { Text("Trash is due") },
-        text = {
-            Text(
-                text = "$count $noun been in Trash for over 30 days. Delete them permanently? This cannot be undone.",
-                color = TextSecondary,
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onDelete) { Text("Delete now") }
-        },
-        dismissButton = {
-            TextButton(onClick = onLater) { Text("Later") }
-        },
-    )
-}

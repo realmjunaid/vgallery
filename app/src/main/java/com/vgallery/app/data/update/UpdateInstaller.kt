@@ -142,7 +142,12 @@ class UpdateInstaller @Inject constructor(
 
     /** The app-private cache file an update for [versionName] is written to. */
     fun updateFile(versionName: String): File =
-        File(File(context.cacheDir, DIRECTORY_NAME), "vgallery_v$versionName.apk")
+        File(File(context.cacheDir, DIRECTORY_NAME), "vgallery_v${safeFileName(versionName)}.apk")
+
+    /** The version comes from a host's tag, so anything that could escape this directory goes. */
+    private fun safeFileName(versionName: String): String =
+        versionName.filter { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' }
+            .ifEmpty { "update" }
 
     /**
      * Null when [file] is a genuine, newer build of this app; otherwise the reason to refuse it.

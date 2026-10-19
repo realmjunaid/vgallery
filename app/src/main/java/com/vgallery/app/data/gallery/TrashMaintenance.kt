@@ -52,7 +52,9 @@ class TrashMaintenanceWorker(
         entryPoint().trashMaintenance().run()
         Result.success()
     } catch (_: Exception) {
-        Result.retry()
+        // A permanent failure (a broken store, an unavailable entry point) must not be retried
+        // forever, so the daily sweep gives up after a few tries and waits for the next period.
+        if (runAttemptCount >= MAX_ATTEMPTS) Result.failure() else Result.retry()
     }
 
     private fun entryPoint(): TrashWorkerEntryPoint =
@@ -64,6 +66,9 @@ class TrashMaintenanceWorker(
 interface TrashWorkerEntryPoint {
     fun trashMaintenance(): TrashMaintenance
 }
+
+/** How many times the daily sweep retries a failing run before giving up until the next period. */
+private const val MAX_ATTEMPTS = 3
 
 /**
  * One daily job, kept if it is already scheduled, so opening the app never resets the clock.

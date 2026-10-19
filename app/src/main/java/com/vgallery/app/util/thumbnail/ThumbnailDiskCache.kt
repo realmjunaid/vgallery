@@ -100,8 +100,6 @@ class ThumbnailDiskCache(
 
     fun remove(key: String): Boolean = runCatching { cache.remove(key) }.getOrDefault(false)
 
-    fun clear() = cache.clear()
-
     fun shutdown() = cache.shutdown()
 
     companion object {

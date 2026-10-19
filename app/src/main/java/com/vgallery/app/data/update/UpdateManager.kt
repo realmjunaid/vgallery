@@ -197,7 +197,14 @@ class UpdateManager @Inject constructor(
 
     private suspend fun runCheck(manual: Boolean) {
         val current = _state.value
-        if (current is UpdateState.Checking || current is UpdateState.Downloading) return
+        // A verified APK that is already on disk is never thrown away by a check: the prompt is
+        // showing and the user can install it without downloading it again.
+        if (current is UpdateState.Checking ||
+            current is UpdateState.Downloading ||
+            current is UpdateState.ReadyToInstall
+        ) {
+            return
+        }
         _state.value = UpdateState.Checking
         // Recorded before the request: a host that is unreachable must not be hammered every launch.
         preferences.updateLastUpdateCheck(System.currentTimeMillis())

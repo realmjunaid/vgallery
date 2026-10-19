@@ -37,8 +37,6 @@ class ThumbnailWorkGate @Inject constructor() {
         synchronized(lock) { openViewers.value = (openViewers.value - 1).coerceAtLeast(0) }
     }
 
-    val isViewerOpen: Boolean get() = openViewers.value > 0
-
     /** Generations currently running (started and not yet finished). */
     val runningGenerations: Int get() = synchronized(lock) { running }
 
@@ -99,9 +97,6 @@ class ThumbnailScheduler(
         synchronized(a) { return !a.permanent && a.count < MAX_ATTEMPTS }
     }
 
-    /** Attempts made for [key] in this process (reset by a success). */
-    fun attemptsFor(key: String): Int = attempts[key]?.let { synchronized(it) { it.count } } ?: 0
-
     /**
      * Returns the cached thumbnail for [thumbnail] or generates, persists and returns it.
      *
@@ -145,8 +140,9 @@ class ThumbnailScheduler(
                             failure
                         }
                     }
-                    cache.write(key, bitmap)
-                    attempts.remove(key)
+                    // The counter only resets when the entry really reached the disk: a failed write
+                    // (full storage, IO error) must keep the attempt count honest.
+                    if (cache.write(key, bitmap)) attempts.remove(key)
                     bitmap
                 }
             } finally {

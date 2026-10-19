@@ -41,7 +41,7 @@ val missingReleaseSigning: List<String> = buildList {
 }
 
 /** Single place for the version: also names the APK file (vgallery_vX.Y.Z.apk). */
-val APP_VERSION_NAME = "1.1.0"
+val APP_VERSION_NAME = "1.1.1"
 
 android {
     namespace = "com.vgallery.app"
@@ -62,7 +62,7 @@ android {
         targetSdk = 36
         // VGallery starts fresh: new package identity, first version.
         // Bump APP_VERSION_NAME (and code) here; the APK file is named from it below.
-        versionCode = 15
+        versionCode = 16
         versionName = APP_VERSION_NAME
     }
 
@@ -119,14 +119,15 @@ android {
 
             // -Pvgallery.quarantine: skip the suites that already fail on main (property tests
             // and the flaky preservation coverage checks) so CI goes red only for a new failure.
-            // A normal local run still executes them.
+            // A normal local run still executes them. The three preservation suites live in the
+            // `preservation` sub-package: without it they were never actually skipped.
             if (project.hasProperty("vgallery.quarantine") || project.hasProperty("quarantine")) {
                 listOf(
                     "com.vgallery.app.PreferencesPropertyTest",
                     "com.vgallery.app.ThumbnailLayerPropertyTest",
-                    "com.vgallery.app.OrderAndMappingPreservationTest",
-                    "com.vgallery.app.RecentsPreservationTest",
-                    "com.vgallery.app.TapCyclePreservationTest",
+                    "com.vgallery.app.preservation.OrderAndMappingPreservationTest",
+                    "com.vgallery.app.preservation.RecentsPreservationTest",
+                    "com.vgallery.app.preservation.TapCyclePreservationTest",
                 ).forEach { test.filter.excludeTestsMatching("$it.*") }
             }
         }
@@ -168,7 +169,6 @@ dependencies {
     implementation(composeBom)
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.foundation)
@@ -185,18 +185,15 @@ dependencies {
     // Navigation
     implementation(libs.androidx.navigation.compose)
 
-    // Media3 ExoPlayer
+    // Media3 ExoPlayer (`session` is not used: playback is driven straight from the player)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
-    implementation(libs.androidx.media3.session)
 
     // Coil
     implementation(libs.coil.compose)
     // Animated WebP/GIF playback (API 28+ via AnimatedImageDecoder, GIF below via GifDecoder).
     implementation(libs.coil.gif)
-    // Video frame thumbnails in grids and covers.
-    implementation(libs.coil.video)
-    // Video frame thumbnails for the gallery grid.
+    // Video frame thumbnails in the grid and the viewer's covers.
     implementation(libs.coil.video)
 
     // Hilt

@@ -16,7 +16,8 @@ object MediaIndexMapping {
     /** A grid tap on [displayedIndex] → the full-list index passed to the viewer route. */
     fun gridTapToFullIndex(mediaItems: List<MediaItem>, isLandscapeMode: Boolean, displayedIndex: Int): Int {
         val displayedItems = gridDisplayedItems(mediaItems, isLandscapeMode)
-        val item = displayedItems[displayedIndex]
+        // The click can outlive the list it was built from (a re-pick swaps the rows mid-frame).
+        val item = displayedItems.getOrNull(displayedIndex) ?: return displayedIndex
         val originalIndex = mediaItems.indexOfFirst { it.uri == item.uri }
         return if (originalIndex >= 0) originalIndex else displayedIndex
     }

@@ -1,11 +1,14 @@
 package com.vgallery.app.ui.gallery
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.graphics.ImageDecoder
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -318,9 +321,10 @@ fun DeviceGalleryScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
-        // A scan reads images and videos, so it needs both permissions. The result map can carry a
-        // partial grant (Android lets one of the two be denied), and reading that as "allowed"
-        // used to leave the gallery empty with no prompt to explain it. Ask the device instead.
+        // The result map can carry a partial grant — Android 13 lets one of the two granular
+        // permissions be denied, and Android 14's "Select photos" grants only
+        // READ_MEDIA_VISUAL_USER_SELECTED — so ask the device what it actually allowed instead of
+        // reading the map, and show whatever it can read rather than nothing at all.
         viewModel.refresh(hasDeviceGalleryPermission(context))
     }
 
@@ -661,6 +665,7 @@ fun DeviceGalleryScreen(
 
 @Composable
 private fun PermissionPrompt(onGrant: () -> Unit) {
+    val context = LocalContext.current
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -691,8 +696,23 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
             ) {
                 Text("Allow access", color = OnAccent)
             }
+            // Android stops showing the dialog after "Don't ask again", and a device policy can block
+            // it from the start — without this the only way out would be reinstalling.
+            Spacer(modifier = Modifier.height(4.dp))
+            TextButton(onClick = { openAppSettings(context) }) {
+                Text("Open app settings", color = TextMuted, fontSize = 13.sp)
+            }
         }
     }
+}
+
+/** Sends the user to this app's system settings page, the fallback when the dialog won't show. */
+internal fun openAppSettings(context: Context) {
+    val intent = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", context.packageName, null)
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
 }
 
 /**
@@ -1858,23 +1878,24 @@ private fun DevicePhotoViewer(
 /** System share sheet for one or many photos/videos. */
 internal fun sharePhotos(context: android.content.Context, photos: List<DevicePhotoRow>) {
     if (photos.isEmpty()) return
-    if (photos.size == 1) {
-        val photo = photos.single()
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = photo.mimeType.ifBlank { "*/*" }
-            putExtra(Intent.EXTRA_STREAM, photo.uri)
+    val mimes = photos.map { it.mimeType.ifBlank { "*/*" } }.toSet()
+    val send = if (photos.size == 1) {
+        Intent(Intent.ACTION_SEND).apply {
+            type = mimes.single()
+            putExtra(Intent.EXTRA_STREAM, photos.single().uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Share via"))
-        return
+    } else {
+        Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = if (mimes.size == 1) mimes.single() else "*/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(photos.map { it.uri }))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     }
-    val mimes = photos.map { it.mimeType.ifBlank { "*/*" } }.toSet()
-    val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-        type = if (mimes.size == 1) mimes.single() else "*/*"
-        putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(photos.map { it.uri }))
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(intent, "Share ${photos.size} items via"))
+    val title = if (photos.size == 1) "Share via" else "Share ${photos.size} items via"
+    // A bare device can have no share sheet at all; the button must not take the app down with it.
+    runCatching { context.startActivity(Intent.createChooser(send, title)) }
+        .onFailure { Toast.makeText(context, "No app can share this", Toast.LENGTH_SHORT).show() }
 }
 
 /** Folder picker for "Move to folder": every destination is a folder the gallery already shows. */

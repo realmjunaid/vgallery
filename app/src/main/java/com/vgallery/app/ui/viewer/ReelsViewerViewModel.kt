@@ -232,12 +232,6 @@ class ReelsViewerViewModel @Inject constructor(
         }
     }
 
-    suspend fun getSavedLastIndex(folderUri: Uri): Int {
-        val entries = appPreferences.recentFolders.first()
-        val match = entries.find { it.startsWith("${folderUri}<<>>") }
-        return match?.let { appPreferences.parseRecentFolderEntry(it)?.lastIndex } ?: 0
-    }
-
     /** Saves the settled position: its full-list index and the item's URI. */
     fun saveLastViewed(folderUri: Uri, index: Int) {
         val itemUri = _uiState.value.mediaItems.getOrNull(index)?.uri?.toString()

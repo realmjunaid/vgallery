@@ -2,5 +2,6 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background"/>
     <foreground android:drawable="@drawable/vgallery_logo_fg"/>
-    <monochrome android:drawable="@drawable/vgallery_logo_fg"/>
+    <!-- No monochrome layer on purpose: the logo is an opaque image, and an opaque drawable tinted
+         by the launcher would theme as a solid blob. Without it, themed icons fall back to this one. -->
 </adaptive-icon>

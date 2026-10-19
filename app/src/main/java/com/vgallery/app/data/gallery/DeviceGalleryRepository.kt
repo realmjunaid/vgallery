@@ -14,6 +14,7 @@ import com.vgallery.app.data.preferences.AppPreferences
 import com.vgallery.app.data.gallery.TrashedItem
 import com.vgallery.app.data.gallery.filterTrashed
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -33,25 +34,56 @@ sealed interface DeleteResult {
 }
 
 /**
- * MediaStore permissions for the auto device gallery (no manual folder pick needed).
+ * The read permissions for [sdkInt], as a pure function so every API level is unit-testable
+ * offline (a Robolectric check can only cover the version it runs on).
  *
- * API 33+ uses the granular READ_MEDIA_* permissions. On Android 10 (API 29) WRITE_EXTERNAL_STORAGE
- * is what makes MediaStore offer its per-file delete consent dialog instead of a bare
- * SecurityException — declaring it only up to API 29 keeps the runtime request in sync with the
- * manifest, because asking for an undeclared permission fails the whole request.
+ * API 33+ splits access into READ_MEDIA_IMAGES and READ_MEDIA_VIDEO; API 34+ also wants
+ * READ_MEDIA_VISUAL_USER_SELECTED, which is what makes the "Select photos" option appear at all
+ * (a partial grant is still a working gallery). API 32 and below uses READ_EXTERNAL_STORAGE.
  */
-fun deviceGalleryPermissions(): Array<String> =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+fun deviceGalleryReadPermissionsFor(sdkInt: Int): Array<String> = when {
+    sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+    )
+    sdkInt >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO
+    )
+    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+/** [deviceGalleryReadPermissionsFor] for the phone the app is running on. */
+fun deviceGalleryReadPermissions(): Array<String> =
+    deviceGalleryReadPermissionsFor(Build.VERSION.SDK_INT)
+
+/**
+ * WRITE_EXTERNAL_STORAGE, only while it is both declared and useful: on Android 10 (API 29) it is
+ * what makes MediaStore offer its per-file delete consent dialog instead of a bare
+ * SecurityException. Android 11 and 12 ignore it, and the manifest caps it at API 29 — asking for
+ * an undeclared permission there makes the whole request fail, which used to leave Android 11/12
+ * users stuck on the permission prompt forever.
+ */
+fun deviceGalleryPermissionsFor(sdkInt: Int): Array<String> =
+    if (sdkInt <= Build.VERSION_CODES.Q) {
+        deviceGalleryReadPermissionsFor(sdkInt) + Manifest.permission.WRITE_EXTERNAL_STORAGE
     } else {
-        arrayOf(
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
-        )
+        deviceGalleryReadPermissionsFor(sdkInt)
     }
 
+/** Everything the one runtime request should include on this phone. */
+fun deviceGalleryPermissions(): Array<String> =
+    deviceGalleryPermissionsFor(Build.VERSION.SDK_INT)
+
+/**
+ * True when the gallery can be read. Any granted read permission is enough: the granular ones are
+ * independent (a phone may allow photos but not videos) and Android 14's "Select photos" grants
+ * only READ_MEDIA_VISUAL_USER_SELECTED. Requiring all of them is what used to leave a phone that
+ * allowed exactly one of them stuck on the permission prompt with an empty gallery behind it.
+ */
 fun hasDeviceGalleryPermission(context: Context): Boolean =
-    deviceGalleryPermissions().all {
+    deviceGalleryReadPermissions().any {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -92,6 +124,7 @@ class DeviceGalleryRepository @Inject constructor(
     fun requiredPermissions(): Array<String> = deviceGalleryPermissions()
 
     /** In-memory snapshot: album switches filter this instantly (no rescan, no spinner). */
+    @Volatile
     private var cachedPhotos: List<DevicePhotoRow>? = null
 
     /**
@@ -353,12 +386,9 @@ class DeviceGalleryRepository @Inject constructor(
         DeleteResult.Deleted
     }
 
-    /** Single-item convenience for [deleteMedia]. */
-    suspend fun deleteMedia(uri: Uri): DeleteResult = deleteMedia(listOf(uri))
-
     /** The URIs from [uris] MediaStore no longer lists: used to prune the Trash after a delete round. */
     suspend fun goneUris(uris: List<Uri>): List<Uri> = withContext(Dispatchers.IO) {
-        uris.filterNot { mediaExists(mediaStorePrimaryUri(it)) }
+        uris.filter { mediaDefinitelyGone(mediaStorePrimaryUri(it)) }
     }
 
     /** True while MediaStore still lists [uri]; an unreadable URI counts as gone. */
@@ -370,13 +400,23 @@ class DeviceGalleryRepository @Inject constructor(
         false
     }
 
+    /**
+     * True only when MediaStore definitively no longer lists [uri]. A failed or empty query reads as
+     * "still there": this drives the daily trash prune, where reading a permission error or a
+     * provider hiccup as "gone" would empty the user's Trash while the files are still on disk.
+     */
+    private fun mediaDefinitelyGone(uri: Uri): Boolean = try {
+        context.contentResolver
+            .query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+            ?.use { !it.moveToFirst() } ?: false
+    } catch (_: Exception) {
+        false
+    }
+
     // ── Trash ─────────────────────────────────────────────────────────────────────────
 
     /** Trashed items, oldest first (delegates to AppPreferences). */
     val trashedMedia: kotlinx.coroutines.flow.Flow<List<TrashedItem>> = appPreferences.trashedMedia
-
-    /** Current set of trashed uris, for callers that need a snapshot. */
-    suspend fun trashedUriSet(): Set<String> = appPreferences.trashedMedia.first().map { it.uri }.toSet()
 
     suspend fun trashMedia(items: List<TrashedItem>): Boolean = appPreferences.trashMedia(items)
 
@@ -470,16 +510,35 @@ class DeviceGalleryRepository @Inject constructor(
             }
         }
 
-    /** Pre-Android-10 move: rewrite the legacy absolute `DATA` path (needs WRITE_EXTERNAL_STORAGE). */
+    /**
+     * Pre-Android-10 move: the row's absolute `DATA` path is the truth, so the bytes are moved too.
+     * Updating `DATA` alone used to leave the row pointing at a file that was never there — the item
+     * vanished from the gallery while its bytes stayed in the old folder.
+     */
     private fun moveLegacy(uris: List<Uri>, target: DeviceFolderTarget): MoveResult {
         val dir = target.absoluteDir ?: return MoveResult.Failed("Moving isn't supported here")
         return try {
             for (uri in uris) {
                 val name = displayNameOf(uri) ?: return MoveResult.Failed("Move failed")
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DATA, "$dir/$name")
+                val from = File(dataPathOf(uri) ?: return MoveResult.Failed("Move failed"))
+                val to = File(dir, name)
+                if (from.absolutePath != to.absolutePath) {
+                    val parent = to.parentFile
+                    if (parent != null && !parent.isDirectory && !parent.mkdirs()) {
+                        return MoveResult.Failed("Move failed")
+                    }
+                    if (!from.renameTo(to)) return MoveResult.Failed("Move failed")
                 }
-                context.contentResolver.update(uri, values, null, null)
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DATA, to.absolutePath)
+                }
+                try {
+                    context.contentResolver.update(uri, values, null, null)
+                } catch (e: Exception) {
+                    // Never leave the row pointing at nothing: put the file back where it was.
+                    runCatching { to.renameTo(from) }
+                    throw e
+                }
             }
             cachedPhotos = null
             MoveResult.Moved
@@ -487,6 +546,17 @@ class DeviceGalleryRepository @Inject constructor(
             MoveResult.Failed(e.message ?: "Move failed")
         }
     }
+
+    /** The legacy absolute path MediaStore stores for [uri] (pre-Android-10 move only). */
+    private fun dataPathOf(uri: Uri): String? =
+        try {
+            context.contentResolver
+                .query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getString(0) else null }
+                ?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
 
     private fun displayNameOf(uri: Uri): String? =
         try {
