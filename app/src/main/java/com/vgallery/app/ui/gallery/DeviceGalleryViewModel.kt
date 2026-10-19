@@ -1,16 +1,12 @@
 package com.vgallery.app.ui.gallery
 
-import android.content.IntentSender
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vgallery.app.data.gallery.AUTOPLAY_DEFAULT_SECONDS
 import com.vgallery.app.data.gallery.DeviceAlbum
-import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DeviceGalleryRepository
 import com.vgallery.app.data.gallery.DevicePhotoRow
 import com.vgallery.app.data.gallery.HomeTab
-import com.vgallery.app.data.gallery.MoveResult
 import com.vgallery.app.data.gallery.TrashedItem
 import com.vgallery.app.data.gallery.groupIntoAlbums
 import com.vgallery.app.data.gallery.inTab
@@ -19,12 +15,8 @@ import com.vgallery.app.data.gallery.sortDevicePhotos
 import com.vgallery.app.data.preferences.AppPreferences
 import com.vgallery.app.data.preferences.SortOrder
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -240,136 +232,6 @@ class DeviceGalleryViewModel @Inject constructor(
             reload()
             val label = if (rows.size > 1) "Moved ${rows.size} items to trash" else "Moved to trash"
             onDone(ok, if (ok) label else "Couldn't move to trash")
-        }
-    }
-
-    // ── Move to folder ────────────────────────────────────────────────────────────────
-
-    /**
-     * Write-consent dialogs surface through [consentRequests]; the screen launches them and
-     * answers via [answerConsent]. Android 10+ needs consent to move media the app doesn't own.
-     */
-    private val _consentRequests = MutableSharedFlow<IntentSender>(extraBufferCapacity = 1)
-    val consentRequests: SharedFlow<IntentSender> = _consentRequests.asSharedFlow()
-    private var consentGate: CompletableDeferred<Boolean>? = null
-
-    fun answerConsent(granted: Boolean) {
-        consentGate?.complete(granted)
-        consentGate = null
-    }
-
-    /** Loads the folders a move can target (queries MediaStore, so it's async). */
-    fun loadMoveTargets(onReady: (List<DeviceFolderTarget>) -> Unit) {
-        viewModelScope.launch { onReady(repository.folderTargets()) }
-    }
-
-    /**
-     * Moves [rows] into [target]. A move rewrites MediaStore's RELATIVE_PATH, so other apps'
-     * media needs one write-consent dialog on Android 10+; consent surfaces on
-     * [consentRequests] and the retry happens through [answerConsent].
-     */
-    fun moveToFolder(
-        rows: List<DevicePhotoRow>,
-        target: DeviceFolderTarget,
-        onDone: (Boolean, String) -> Unit
-    ) {
-        if (rows.isEmpty()) return
-        val label = if (rows.size > 1) "Moved ${rows.size} items to ${target.displayName}"
-        else "Moved to ${target.displayName}"
-        viewModelScope.launch {
-            var pending = rows.map { it.uri }
-            // Android 10 asks consent one item at a time, so a round is needed per item; stopping
-            // at three used to leave the rest of the selection unmoved and report "Move failed".
-            var rounds = 0
-            while (rounds <= rows.size) {
-                rounds++
-                when (val result = repository.moveMedia(pending, target)) {
-                    is MoveResult.Moved -> {
-                        reload()
-                        onDone(true, label)
-                        return@launch
-                    }
-                    is MoveResult.NeedsConsent -> {
-                        // Only one consent dialog can be on screen at a time: a second request
-                        // cancels the first, which otherwise waited for an answer that never came.
-                        consentGate?.complete(false)
-                        val gate = CompletableDeferred<Boolean>()
-                        consentGate = gate
-                        _consentRequests.emit(result.intentSender)
-                        if (!gate.await()) {
-                            onDone(false, "Move cancelled")
-                            return@launch
-                        }
-                        pending = result.pending
-                    }
-                    is MoveResult.NeedsFolderAccess -> {
-                        // MediaStore won't let a file move into this folder: ask the user to grant
-                        // access to it, then retry through SAF.
-                        consentGate?.complete(false)
-                        val gate = CompletableDeferred<Uri?>()
-                        folderAccessGate = gate
-                        _folderAccessRequests.emit(result.target)
-                        val treeUri = gate.await()
-                        if (treeUri == null) { onDone(false, "Move cancelled"); return@launch }
-                        // Persist the grant so the next move into this folder is silent.
-                        repository.rememberMoveTreeUri(result.target.relativePath, treeUri)
-                        // Retry through SAF.
-                        moveToFolderViaSaf(rows, target, treeUri, onDone)
-                        return@launch
-                    }
-                    is MoveResult.Failed -> {
-                        onDone(false, result.message)
-                        return@launch
-                    }
-                }
-            }
-            onDone(false, "Move failed")
-        }
-    }
-
-    // ── Folder access (SAF) for moves into non-standard directories ────────────────
-    private val _folderAccessRequests = MutableSharedFlow<DeviceFolderTarget>(extraBufferCapacity = 1)
-    val folderAccessRequests: SharedFlow<DeviceFolderTarget> = _folderAccessRequests.asSharedFlow()
-    private var folderAccessGate: CompletableDeferred<Uri?>? = null
-
-    fun answerFolderAccess(treeUri: Uri?) {
-        folderAccessGate?.complete(treeUri)
-        folderAccessGate = null
-    }
-
-    /**
-     * Moves [rows] into [target] using SAF (for destinations MediaStore won't accept). The user must
-     * have granted access to the destination tree ([treeUri]) first.
-     */
-    fun moveToFolderViaSaf(
-        rows: List<DevicePhotoRow>,
-        target: DeviceFolderTarget,
-        treeUri: Uri,
-        onDone: (Boolean, String) -> Unit
-    ) {
-        if (rows.isEmpty()) return
-        val label = if (rows.size > 1) "Moved ${rows.size} items to ${target.displayName}"
-        else "Moved to ${target.displayName}"
-        viewModelScope.launch {
-            var pending = rows.map { it.uri }
-            var rounds = 0
-            while (rounds <= rows.size) {
-                rounds++
-                when (val result = repository.moveMediaViaSaf(pending, target, treeUri)) {
-                    is MoveResult.Moved -> { reload(); onDone(true, label); return@launch }
-                    is MoveResult.NeedsConsent -> {
-                        consentGate?.complete(false)
-                        val gate = CompletableDeferred<Boolean>()
-                        consentGate = gate
-                        _consentRequests.emit(result.intentSender)
-                        if (!gate.await()) { onDone(false, "Move cancelled"); return@launch }
-                        pending = result.pending
-                    }
-                    is MoveResult.NeedsFolderAccess -> { onDone(false, "Folder access needed"); return@launch }
-                    is MoveResult.Failed -> { onDone(false, result.message); return@launch }
-                }
-            }
-            onDone(false, "Move failed")
         }
     }
     fun photosInFolders(names: Set<String>): List<DevicePhotoRow> {

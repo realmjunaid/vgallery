@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
-    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.7.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.8.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -63,7 +63,6 @@ demo images — a device-less test has no camera roll.
 - **Share, delete, search** — system share sheet, folder search from home (it finds folders, not loose files — home is where you pick a folder), long-press multi-select in folders and on home with batch actions.
 - **Built-in updates** ⬆️ — the app checks GitHub for a newer release (at most every six hours, and only if you leave it on) and offers *Update now* / *Cancel*. Update now downloads the APK, verifies its checksum and signature, and opens Android's installer without a browser.
 - **Trash** 🗑️ — **Settings › Library › Trash**: deleting moves items to a Google-Photos-style Trash instead of wiping them, and everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent). A daily job drops entries whose files are already gone, and once something has sat for 30 days the app asks before deleting it — Android will not do that from the background.
-- **Move to folder** 📁 — pick photos or videos inside a folder and move them into any other folder on the device in one step: long-press to start selecting, and the Move action appears with Share, Details and Delete.
 - **Details sheet** — size, resolution, date, folder and type for any photo or selection.
 - **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
 - **Appearance** — Settings › Appearance: follow the phone, or force light or dark, pick an accent (or your wallpaper's colour on Android 12+), and a pure-black AMOLED option. The full-screen viewer stays black in every theme, because a photo on a white backdrop reads wrong.
@@ -73,7 +72,7 @@ demo images — a device-less test has no camera roll.
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest), mirrored on [**GitLab**](https://gitlab.com/realmjunaid/vgallery/-/releases) with the same APK and source archives.
-2. Download **`vgallery_v1.1.7-release.apk`** (under *Assets*).
+2. Download **`vgallery_v1.1.8-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
 

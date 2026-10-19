@@ -87,7 +87,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -156,7 +155,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.vgallery.app.data.gallery.AlbumGroup
 import com.vgallery.app.data.gallery.DeviceAlbum
-import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DevicePhotoRow
 import com.vgallery.app.data.gallery.HomeTab
 import com.vgallery.app.data.gallery.autoplayDwellMs
@@ -239,9 +237,6 @@ fun DeviceGalleryScreen(
     // Shared delete targets (grid, folders, albums) with one confirm dialog.
     var deleteTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
     var infoTargets by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
-    // Items queued for "Move to folder", plus the destinations once they finish loading.
-    var moveItems by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
-    var moveFolderOptions by remember { mutableStateOf<List<DeviceFolderTarget>?>(null) }
 
     fun toast(msg: String) {
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -266,49 +261,7 @@ fun DeviceGalleryScreen(
         }
     }
 
-    fun startMove(targets: List<DevicePhotoRow>) {
-        if (targets.isEmpty()) return
-        moveItems = targets
-        moveFolderOptions = null
-        viewModel.loadMoveTargets { moveFolderOptions = it }
-    }
-
-    fun performMove(targets: List<DevicePhotoRow>, target: DeviceFolderTarget) {
-        viewModel.moveToFolder(targets, target) { ok, msg ->
-            toast(msg)
-            if (ok) {
-                selectedPhotoIds = emptySet()
-                selectedFolders = emptySet()
-                moveItems = null
-                moveFolderOptions = null
-                viewModel.refreshAfterDelete()
-            }
-        }
-    }
-
-    // System consent dialog for moves (Android 10+): launched here, answered in the VM.
-    val consentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartIntentSenderForResult()
-    ) { result ->
-        viewModel.answerConsent(result.resultCode == Activity.RESULT_OK)
-    }
-    // System folder picker for moves into directories MediaStore won't accept (Android 10+):
-    // the user grants access once, and it's remembered for that folder.
-    val folderAccessLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        viewModel.answerFolderAccess(uri)
-    }
-    LaunchedEffect(Unit) {
-        viewModel.folderAccessRequests.collect { target ->
-            folderAccessLauncher.launch(null)
-        }
-    }
-    LaunchedEffect(Unit) {
-        viewModel.consentRequests.collect { sender ->
-            consentLauncher.launch(IntentSenderRequest.Builder(sender).build())
-        }
-    }
+    // (Move consent + folder-access launchers removed: move option is gone.)
 
     // Viewer source: album-filtered list normally, global search results from home search.
     var searchViewerPhotos by remember { mutableStateOf<List<DevicePhotoRow>?>(null) }
@@ -368,7 +321,6 @@ fun DeviceGalleryScreen(
                     count = if (foldersSelected) selectedFolders.size else selectedPhotoIds.size,
                     noun = if (foldersSelected) "folders" else "items",
                     onShare = { sharePhotos(context, selectionRows()) },
-                    onMove = { startMove(selectionRows()) },
                     onInfo = { infoTargets = selectionRows() },
                     onDelete = { deleteTargets = selectionRows() },
                     onClear = {
@@ -665,18 +617,8 @@ fun DeviceGalleryScreen(
         onDismiss = { deleteTargets = null }
     )
 
-    // Folder picker for "Move to folder".
-    moveItems?.let { items ->
-        MoveFolderDialog(
-            itemCount = items.size,
-            targets = moveFolderOptions,
-            onPick = { target -> performMove(items, target) },
-            onDismiss = {
-                moveItems = null
-                moveFolderOptions = null
-            }
-        )
-    }
+    // (Move-to-folder dialog removed: move option is gone.)
+
 
     // Shared details sheet for grid + folder selections.
     infoTargets?.let { infos ->
@@ -2087,102 +2029,6 @@ internal fun sharePhotos(context: android.content.Context, photos: List<DevicePh
 }
 
 /** Folder picker for "Move to folder": every destination is a folder the gallery already shows. */
-@Composable
-private fun MoveFolderDialog(
-    itemCount: Int,
-    targets: List<DeviceFolderTarget>?,
-    onPick: (DeviceFolderTarget) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var query by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceVariant,
-        title = {
-            Text(
-                text = if (itemCount > 1) "Move $itemCount items to" else "Move to folder",
-                color = TextPrimary
-            )
-        },
-        text = {
-            when {
-                targets == null -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Violet400,
-                            strokeWidth = 2.dp
-                        )
-                        Text(
-                            text = "Loading folders\u2026",
-                            color = TextSecondary,
-                            modifier = Modifier.padding(start = 12.dp)
-                        )
-                    }
-                }
-                targets.isEmpty() -> Text("No folders found on this device.", color = TextSecondary)
-                else -> {
-                    val filtered = if (query.isBlank()) targets
-                    else targets.filter { it.displayName.contains(query.trim(), ignoreCase = true) }
-                    Column {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            placeholder = { Text("Search folders", color = TextMuted) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Violet400,
-                                unfocusedBorderColor = SurfaceElevated,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary,
-                                cursorColor = Violet400
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        if (filtered.isEmpty()) {
-                            Text("No folders match \"${query.trim()}\".", color = TextSecondary)
-                        } else {
-                            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
-                                items(filtered, key = { it.relativePath }) { target ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onPick(target) }
-                                            .padding(vertical = 12.dp, horizontal = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Filled.Folder, contentDescription = null, tint = Violet400)
-                                        Column(modifier = Modifier.padding(start = 12.dp)) {
-                                            Text(
-                                                text = target.displayName,
-                                                color = TextPrimary,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = if (target.count == 1) "1 item" else "${target.count} items",
-                                                color = TextMuted,
-                                                fontSize = 12.sp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = TextSecondary)
-            }
-        }
-    )
-}
-
 /** Shared delete confirmation for viewer, grid and folder selections. */
 @Composable
 private fun DeleteConfirmDialog(
@@ -2228,7 +2074,6 @@ internal fun SelectionBar(
     count: Int,
     noun: String,
     onShare: () -> Unit,
-    onMove: () -> Unit,
     onInfo: () -> Unit,
     onDelete: () -> Unit,
     onClear: () -> Unit,
@@ -2257,9 +2102,6 @@ internal fun SelectionBar(
         actions = {
             TextButton(onClick = onSelectAll) {
                 Text("All", color = TextPrimary, fontWeight = FontWeight.SemiBold)
-            }
-            IconButton(onClick = onMove) {
-                Icon(Icons.Filled.Folder, contentDescription = "Move", tint = TextPrimary)
             }
             IconButton(onClick = onShare) {
                 Icon(Icons.Filled.Share, contentDescription = "Share", tint = TextPrimary)
