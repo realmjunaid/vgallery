@@ -144,6 +144,24 @@ class GalleryScreenshotsTest {
         }
     }
 
+    /** The group button on: folders that open with the same word, under one heading. */
+    @Test
+    fun homeGroupedDarkAmoled() = record("home_grouped_dark") {
+        VGalleryTheme(colors = galleryColors(dark = true, amoled = true)) {
+            Column(Modifier.fillMaxSize().background(Black)) {
+                HomeTabs(selected = HomeTab.PHOTOS, onSelect = {})
+                AlbumGrid(
+                    albums = groupedAlbums,
+                    newFolders = emptySet(),
+                    onAlbumClick = {},
+                    selected = emptySet(),
+                    onAlbumLongClick = {},
+                    grouped = true
+                )
+            }
+        }
+    }
+
     // ── Folder contents ─────────────────────────────────────────────────────────────────────
 
     @Test
@@ -302,38 +320,37 @@ class GalleryScreenshotsTest {
     // ── Samples ─────────────────────────────────────────────────────────────────────────────
 
     private val sampleAlbums = listOf(
-        DeviceAlbum(
-            name = "Camera",
-            count = 128,
-            coverUri = Uri.parse("content://media/external/images/media/1"),
-            coverIsVideo = false,
-            sizeBytes = 412_345_678L
-        ),
-        DeviceAlbum(
-            name = "Screenshots",
-            count = 42,
-            coverUri = Uri.parse("content://media/external/images/media/2"),
-            coverIsVideo = false,
-            sizeBytes = 88_123_456L
-        ),
-        DeviceAlbum(
-            name = "Downloads",
-            count = 7,
-            coverUri = Uri.parse("content://media/external/video/media/3"),
-            coverIsVideo = true,
-            sizeBytes = 12_345_678L
-        ),
-        DeviceAlbum(
-            name = "WhatsApp Images",
-            count = 356,
-            coverUri = Uri.parse("content://media/external/images/media/4"),
-            coverIsVideo = false,
-            sizeBytes = 234_567_890L
-        )
+        album("Camera", count = 128, coverId = 1, sizeBytes = 412_345_678L),
+        album("Screenshots", count = 42, coverId = 2, sizeBytes = 88_123_456L),
+        album("Downloads", count = 7, coverId = 3, sizeBytes = 12_345_678L, coverIsVideo = true),
+        album("WhatsApp Images", count = 356, coverId = 4, sizeBytes = 234_567_890L)
     )
 
-    /** Twelve items, so the grid and the list both fill the screen the way a real folder does. */
-    private val samplePhotos = listOf(
+    /** Folder names a real phone grows: two families that share a word, and two loners. */
+    private val groupedAlbums = listOf(
+        album("Camera", count = 128, coverId = 1, sizeBytes = 412_345_678L),
+        album("Camera Roll", count = 64, coverId = 5, sizeBytes = 210_112_384L),
+        album("WhatsApp Images", count = 356, coverId = 4, sizeBytes = 234_567_890L),
+        album("WhatsApp Video", count = 42, coverId = 6, sizeBytes = 512_000_000L),
+        album("Screenshots", count = 42, coverId = 2, sizeBytes = 88_123_456L),
+        album("Downloads", count = 7, coverId = 3, sizeBytes = 12_345_678L)
+    )
+
+    private fun album(
+        name: String,
+        count: Int,
+        coverId: Int,
+        sizeBytes: Long,
+        coverIsVideo: Boolean = false
+    ) = DeviceAlbum(
+        name = name,
+        count = count,
+        coverUri = Uri.parse("content://media/external/images/media/$coverId"),
+        coverIsVideo = coverIsVideo,
+        sizeBytes = sizeBytes
+    )
+
+    /** Twelve items, so the grid and the list both fill the screen the way a real folder does. */    private val samplePhotos = listOf(
         photo(1L, "IMG_20260118_143022.jpg", "image/jpeg", 4_210_368L, 4032, 3024),
         photo(2L, "VID_20260120_091544.mp4", "video/mp4", 28_451_840L, 1920, 1080, durationMs = 12_400L),
         photo(3L, "IMG_20260121_184210.jpg", "image/jpeg", 3_880_128L, 3024, 3024),
@@ -373,17 +390,13 @@ class GalleryScreenshotsTest {
     )
 
     private val sampleRelease = AppRelease(
-        versionName = "1.1.1",
-        tag = "v1.1.1",
+        versionName = "1.1.2",
+        tag = "v1.1.2",
         notes = """
-            - **Android 11 & 12 fixed** - the app could never get past "Allow photo access" on those versions
-            - **Android 14 "Select photos"** - partial access is accepted now
-            - **Trash stays truthful** - a failed lookup no longer counts as "file already gone"
-            - **Move on Android 8 & 9** - moving a file really moves it now
-            - **Smaller and tidier** - unused code and dead launcher assets removed
+            - **Group similar folders** - one tap gathers folders that share a name (WhatsApp Images with WhatsApp Video, Camera with Camera Roll) under one heading, and a second tap spreads them back out
         """.trimIndent(),
-        apkUrl = "https://github.com/realmjunaid/vgallery/releases/download/v1.1.1/vgallery_v1.1.1-release.apk",
-        apkSha256 = "2e28a97ddff8eb2ca135d91f5a9785e105509f70b7fd5eaed375c37aa2f883a5",
+        apkUrl = "https://github.com/realmjunaid/vgallery/releases/download/v1.1.2/vgallery_v1.1.2-release.apk",
+        apkSha256 = "b5db7a1448affd3397bb32c4820e746435c82caee9c08ce712fba4e15f20d1df",
         source = "github"
     )
 }

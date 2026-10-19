@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
-    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.1.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.2.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -21,19 +21,23 @@
 
 <p align="center">
   <img src="docs/screenshots/home-dark.png" width="220" alt="Home: every folder, newest first, on pure-black AMOLED">
-  <img src="docs/screenshots/feed-dark.png" width="220" alt="Full view: one photo after another, full screen">
-  <img src="docs/screenshots/grid-dark.png" width="220" alt="A folder as a thumbnail grid, with multi-select">
+  <img src="docs/screenshots/home-grouped.png" width="220" alt="Home with the group button on: WhatsApp Images and WhatsApp Video under one heading">
+  <img src="docs/screenshots/home-light.png" width="220" alt="Home in the light theme">
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/home-light.png" width="220" alt="Home in the light theme">
-  <img src="docs/screenshots/videos-light.png" width="220" alt="The Videos tab, in the violet accent">
+  <img src="docs/screenshots/feed-dark.png" width="220" alt="Full view: one photo after another, full screen">
+  <img src="docs/screenshots/grid-dark.png" width="220" alt="A folder as a thumbnail grid, with multi-select">
   <img src="docs/screenshots/list-light.png" width="220" alt="A folder as a list, with each file's title and size">
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/videos-light.png" width="220" alt="The Videos tab, in the violet accent">
   <img src="docs/screenshots/settings-dark.png" width="220" alt="Settings: theme, accent, pure black, updates">
   <img src="docs/screenshots/settings-light.png" width="220" alt="Settings in the light theme">
+</p>
+
+<p align="center">
   <img src="docs/screenshots/update-dark.png" width="220" alt="The built-in update prompt">
 </p>
 
@@ -48,6 +52,7 @@ demo images — a device-less test has no camera roll.
 
 - **Reels-style vertical scrolling** ⭐ — the heart of VGallery. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
 - **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure. Each folder card shows its item count and total size, the header totals both and adds how much space the whole thing takes, folders are ordered newest-added first with fresh ones raised to the top behind a small green dot until you open them, and a folder's contents always list A–Z — in *natural* order, so `1(2).png` really does come before `1(10).png`.
+- **Group similar folders** 🗂️ — a button on home gathers folders that share a name into one section, each under its own heading: *WhatsApp Images* and *WhatsApp Video* together under **WhatsApp**, *Camera* with *Camera Roll*, `100ANDRO` with `101ANDRO`. Tap it again and they spread back out exactly as they were. Plurals and numbering are not treated as different folders, and a folder with no relatives stays plainly on its own.
 - **Photos & Videos tabs** — home splits the library in two: *Photos* for still images, *Videos* for everything that plays (videos, GIFs and animated WebPs), each as its own folder grid.
 - **Grid or list view** — a toggle next to Delete switches a folder between the thumbnail grid and a line-by-line list showing each file's title and size.
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression. Videos show their poster frame instead of a black box, and start playing only when you tap them. While a video plays, its remaining time counts down in the corner, so how much is left is readable at any moment.
@@ -68,7 +73,7 @@ demo images — a device-less test has no camera roll.
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest), mirrored on [**GitLab**](https://gitlab.com/realmjunaid/vgallery/-/releases) with the same APK and source archives.
-2. Download **`vgallery_v1.1.1-release.apk`** (under *Assets*).
+2. Download **`vgallery_v1.1.2-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
 

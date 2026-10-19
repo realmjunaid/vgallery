@@ -116,6 +116,71 @@ fun sortAlbumsForHome(albums: List<DeviceAlbum>, newFolders: Set<String>): List<
     )
 
 /**
+ * Folders whose names open the same way, gathered under one heading while home is grouped.
+ * [title] is that opening word as the user wrote it — "WhatsApp" for "WhatsApp Images" — and
+ * [albums] keeps the order home already had them in.
+ */
+data class AlbumGroup(val title: String, val albums: List<DeviceAlbum>) {
+    /** Two or more folders share the name; one folder on its own needs no heading over it. */
+    val isFamily: Boolean get() = albums.size > 1
+}
+
+/**
+ * Gathers folders that differ only in what follows their first word.
+ *
+ * "WhatsApp Images" and "WhatsApp Video" belong together, and so do "Camera" and "Camera Roll",
+ * or "Download" and "Downloads": a plural is not a different folder name, and neither are the
+ * digits in "Camera2", "Screenshot (1)" or "100ANDRO"/"101ANDRO". A folder with no relatives
+ * keeps its own group, so grouping only changes the grid where there is a family to gather.
+ * Families come in the order their first folder does — a fresh folder still surfaces at the top.
+ */
+fun groupAlbums(albums: List<DeviceAlbum>): List<AlbumGroup> {
+    val families = LinkedHashMap<String, MutableList<DeviceAlbum>>()
+    albums.forEach { album ->
+        families.getOrPut(albumFamilyKey(album.name)) { mutableListOf() } += album
+    }
+    return families.map { (key, members) -> AlbumGroup(albumFamilyTitle(key, members), members) }
+}
+
+/**
+ * The word a folder name opens with, once the digits and the punctuation around it are gone: the
+ * part two names of a family agree on. "Camera2" is the Camera family, and "100ANDRO" opens on
+ * "ANDRO" so roll 100 and roll 101 gather — a name with no letters at all ("2024") has no word to
+ * share and stands alone.
+ */
+private fun albumFamilyKey(name: String): String {
+    val word = albumFamilyWord(name) ?: return name.trim().lowercase()
+    val lowered = word.lowercase()
+    val base = lowered.trim { it.isDigit() }.ifBlank { lowered }
+    // "Downloads" is "Download" to anyone looking at a folder list.
+    return if (base.length > 4 && base.endsWith("s") && !base.endsWith("ss")) base.dropLast(1) else base
+}
+
+/**
+ * The shared word as the user wrote it — "WhatsApp", not "whatsapp". Prefers the spelling that is
+ * the family word itself, so a heading reads "Camera" and not "Camera2".
+ */
+private fun albumFamilyTitle(key: String, members: List<DeviceAlbum>): String {
+    val words = members.mapNotNull { albumFamilyWord(it.name) }
+    return words.firstOrNull { it.lowercase() == key }
+        ?: words.minByOrNull { it.length }
+        ?: members.first().name.trim()
+}
+
+/**
+ * The word that identifies a folder among its siblings: the first one with a letter in it, so a
+ * numbering prefix ("100ANDRO", "2024 Camera") never hides the name. A name with no letters at all
+ * falls back to its first word, so "2024 (1)" still belongs with "2024".
+ */
+private fun albumFamilyWord(name: String): String? {
+    val words = name.split(ALBUM_NAME_SEPARATORS).filter { it.isNotBlank() }
+    return words.firstOrNull { word -> word.any(Char::isLetter) } ?: words.firstOrNull()
+}
+
+/** A folder name split into its words: anything that is not a letter or a digit separates them. */
+private val ALBUM_NAME_SEPARATORS = Regex("[^\\p{L}\\p{N}]+")
+
+/**
  * Home search: the folders whose name contains [query], case-insensitively, in the order they were
  * given. Home is a folder picker — a query there means "where is that folder" — so files never
  * appear in the results. A blank query returns every folder untouched.

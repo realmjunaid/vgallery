@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -63,6 +64,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderCopy
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
@@ -149,6 +151,7 @@ import coil3.size.Precision
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import com.vgallery.app.data.gallery.AlbumGroup
 import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DevicePhotoRow
@@ -159,6 +162,7 @@ import com.vgallery.app.data.gallery.homeSummary
 import com.vgallery.app.data.gallery.formatMediaDate
 import com.vgallery.app.data.gallery.formatResolution
 import com.vgallery.app.data.gallery.hasDeviceGalleryPermission
+import com.vgallery.app.data.gallery.groupAlbums
 import com.vgallery.app.ui.theme.Black
 import com.vgallery.app.ui.theme.ErrorRed
 import com.vgallery.app.ui.theme.NewFolderDot
@@ -208,6 +212,9 @@ fun DeviceGalleryScreen(
     var homeQuery by remember { mutableStateOf("") }
     // Folder view mode: the default grid, or a line-by-line list that also shows name and size.
     var listMode by rememberSaveable { mutableStateOf(false) }
+    // Home: gather folders whose names open the same way ("WhatsApp Images" + "WhatsApp Video")
+    // under one heading. Off by default, and the button in the top bar flips it back.
+    var groupFolders by rememberSaveable { mutableStateOf(false) }
     // One grid state per home tab, owned here — not inside AlbumGrid. Opening a folder removes
     // that grid from composition; a state created inside it would be thrown away and Back would
     // land at the top. rememberSaveable also keeps the offset across rotation and process death.
@@ -403,6 +410,24 @@ fun DeviceGalleryScreen(
                 },
                 actions = {
                     if (isHome && uiState.selectedAlbum == null && selectedFolders.isEmpty()) {
+                        // Similar folder names, together or apart. Sits with the other grid-wide
+                        // switches, and says so in colour while it is on.
+                        IconButton(onClick = {
+                            groupFolders = !groupFolders
+                            if (groupFolders && groupAlbums(uiState.albums).none { it.isFamily }) {
+                                toast("No similar folder names to group")
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Filled.FolderCopy,
+                                contentDescription = if (groupFolders) {
+                                    "Ungroup folders"
+                                } else {
+                                    "Group folders by name"
+                                },
+                                tint = if (groupFolders) Violet400 else TextSecondary
+                            )
+                        }
                         IconButton(onClick = {
                             showHomeSearch = !showHomeSearch
                             if (!showHomeSearch) homeQuery = ""
@@ -521,6 +546,7 @@ fun DeviceGalleryScreen(
                                     newFolders = uiState.newFolders,
                                     state = albumGridState,
                                     selected = selectedFolders,
+                                    grouped = groupFolders,
                                     onAlbumClick = { album ->
                                         if (selectedFolders.isNotEmpty()) {
                                             selectedFolders = selectedFolders.toggle(album.name)
@@ -826,6 +852,7 @@ internal fun AlbumGrid(
     selected: Set<String>,
     onAlbumLongClick: (DeviceAlbum) -> Unit,
     state: LazyGridState = rememberLazyGridState(),
+    grouped: Boolean = false,
 ) {
     LazyVerticalGrid(
         state = state,
@@ -835,77 +862,146 @@ internal fun AlbumGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(albums, key = { it.name }) { album ->
-            val isSelected = album.name in selected
-            Column(
+        if (grouped) {
+            // Similar names under one heading. A folder with no relatives is drawn on its own,
+            // exactly as it is ungrouped, so the grid only changes where a family exists.
+            groupAlbums(albums).forEach { family ->
+                if (family.isFamily) {
+                    // A directory name can never contain a slash, so this key cannot collide
+                    // with a folder's own name in the same grid.
+                    item(key = "group/${family.title}", span = { GridItemSpan(maxLineSpan) }) {
+                        AlbumGroupHeading(family)
+                    }
+                }
+                items(family.albums, key = { it.name }) { album ->
+                    AlbumCard(
+                        album = album,
+                        isNew = album.name in newFolders,
+                        isSelected = album.name in selected,
+                        onAlbumClick = onAlbumClick,
+                        onAlbumLongClick = onAlbumLongClick,
+                        modifier = Modifier.animateItem()
+                    )
+                }
+            }
+        } else {
+            items(albums, key = { it.name }) { album ->
+                AlbumCard(
+                    album = album,
+                    isNew = album.name in newFolders,
+                    isSelected = album.name in selected,
+                    onAlbumClick = onAlbumClick,
+                    onAlbumLongClick = onAlbumLongClick,
+                    modifier = Modifier.animateItem()
+                )
+            }
+        }
+    }
+}
+
+/** The heading over a family of folders: the shared name, and how many folders it collected. */
+@Composable
+private fun AlbumGroupHeading(family: AlbumGroup) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = family.title,
+            color = TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "${family.albums.size} folders",
+            color = TextMuted,
+            fontSize = 12.sp,
+            maxLines = 1
+        )
+    }
+}
+
+/** One folder card: its cover, a green dot while it is new, name, item count and size. */
+@Composable
+private fun AlbumCard(
+    album: DeviceAlbum,
+    isNew: Boolean,
+    isSelected: Boolean,
+    onAlbumClick: (DeviceAlbum) -> Unit,
+    onAlbumLongClick: (DeviceAlbum) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(SurfaceCard)
+            .then(
+                if (isSelected) Modifier.border(2.dp, Violet500, RoundedCornerShape(14.dp))
+                else Modifier
+            )
+            .combinedClickable(
+                onClick = { onAlbumClick(album) },
+                onLongClick = { onAlbumLongClick(album) }
+            )
+            .padding(12.dp)
+    ) {
+        Box {
+            StaticGalleryImage(
+                uri = album.coverUri,
+                isVideo = album.coverIsVideo,
+                contentDescription = album.name,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .animateItem()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(SurfaceCard)
-                    .then(
-                        if (isSelected) Modifier.border(2.dp, Violet500, RoundedCornerShape(14.dp))
-                        else Modifier
-                    )
-                    .combinedClickable(
-                        onClick = { onAlbumClick(album) },
-                        onLongClick = { onAlbumLongClick(album) }
-                    )
-                    .padding(12.dp)
-            ) {
-                Box {
-                    StaticGalleryImage(
-                        uri = album.coverUri,
-                        isVideo = album.coverIsVideo,
-                        contentDescription = album.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1.4f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(SurfaceVariant)
-                    )
-                    // A folder added since the last scan carries a green dot until it is opened.
-                    if (album.name in newFolders) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(NewFolderDot)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.Folder,
-                        contentDescription = null,
-                        tint = Violet400,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = album.name,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "${album.count} items", color = TextMuted, fontSize = 12.sp)
-                    if (album.sizeBytes > 0L) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = formatBytes(album.sizeBytes),
-                            color = TextMuted.copy(alpha = 0.7f),
-                            fontSize = 11.sp
-                        )
-                    }
-                }
+                    .fillMaxWidth()
+                    .aspectRatio(1.4f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(SurfaceVariant)
+            )
+            // A folder added since the last scan carries a green dot until it is opened.
+            if (isNew) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(NewFolderDot)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Folder,
+                contentDescription = null,
+                tint = Violet400,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = album.name,
+                color = TextPrimary,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "${album.count} items", color = TextMuted, fontSize = 12.sp)
+            if (album.sizeBytes > 0L) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = formatBytes(album.sizeBytes),
+                    color = TextMuted.copy(alpha = 0.7f),
+                    fontSize = 11.sp
+                )
             }
         }
     }
