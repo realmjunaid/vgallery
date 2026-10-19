@@ -16,16 +16,23 @@ const val AUTOPLAY_VIDEO_FALLBACK_MS = 30_000L
 /** Videos are advanced by the player the moment they end; this only guards one that never says so. */
 private const val AUTOPLAY_VIDEO_SLACK_MS = 2_000L
 
+/** A GIF or an animated WebP has no duration MediaStore can report; let it play this long. */
+const val AUTOPLAY_MOTION_IMAGE_MS = 5_000L
+
 /** Seconds per photo, kept inside what the setting offers. */
 fun autoplaySeconds(value: Int): Int = value.coerceIn(AUTOPLAY_MIN_SECONDS, AUTOPLAY_MAX_SECONDS)
 
 /** How long an item holds the screen before autoplay moves on. */
-fun autoplayDwellMs(isVideo: Boolean, durationMs: Long, seconds: Int): Long =
-    if (isVideo) {
-        (durationMs.takeIf { it > 0L } ?: AUTOPLAY_VIDEO_FALLBACK_MS) + AUTOPLAY_VIDEO_SLACK_MS
-    } else {
-        autoplaySeconds(seconds) * 1_000L
-    }
+fun autoplayDwellMs(
+    isVideo: Boolean,
+    isMotionImage: Boolean,
+    durationMs: Long,
+    seconds: Int
+): Long = when {
+    isVideo -> (durationMs.takeIf { it > 0L } ?: AUTOPLAY_VIDEO_FALLBACK_MS) + AUTOPLAY_VIDEO_SLACK_MS
+    isMotionImage -> AUTOPLAY_MOTION_IMAGE_MS
+    else -> autoplaySeconds(seconds) * 1_000L
+}
 
 /** Glide length is kept inside these bounds, however short or long the step turns out to be. */
 private const val AUTOPLAY_GLIDE_MIN_MS = 250L

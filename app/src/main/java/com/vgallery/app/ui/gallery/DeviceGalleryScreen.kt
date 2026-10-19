@@ -1558,7 +1558,7 @@ private fun DevicePhotoViewer(
         if (!autoPlay) return@LaunchedEffect
         val item = photos.getOrNull(playingIndex) ?: return@LaunchedEffect
         val startedAt = playingIndex
-        delay(autoplayDwellMs(item.isVideo, item.durationMs, autoplaySeconds))
+        delay(autoplayDwellMs(item.isVideo, item.isMotionImage, item.durationMs, autoplaySeconds))
         // Still on the same item after the wait: nothing ended on its own, so move on.
         if (playingIndex == startedAt) advanceAutoPlay()
     }

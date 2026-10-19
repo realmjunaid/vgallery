@@ -3,6 +3,7 @@ package com.vgallery.app
 import com.vgallery.app.data.gallery.AUTOPLAY_DEFAULT_SECONDS
 import com.vgallery.app.data.gallery.AUTOPLAY_MAX_SECONDS
 import com.vgallery.app.data.gallery.AUTOPLAY_MIN_SECONDS
+import com.vgallery.app.data.gallery.AUTOPLAY_MOTION_IMAGE_MS
 import com.vgallery.app.data.gallery.AUTOPLAY_VIDEO_FALLBACK_MS
 import com.vgallery.app.data.gallery.autoplayDwellMs
 import com.vgallery.app.data.gallery.autoplayGlideMs
@@ -20,9 +21,9 @@ class AutoplayPacingTest {
 
     @Test
     fun photosHoldForTheChosenSeconds() {
-        assertEquals(1_000L, autoplayDwellMs(isVideo = false, durationMs = 0L, seconds = 1))
-        assertEquals(5_000L, autoplayDwellMs(isVideo = false, durationMs = 0L, seconds = 5))
-        assertEquals(15_000L, autoplayDwellMs(isVideo = false, durationMs = 0L, seconds = 15))
+        assertEquals(1_000L, autoplayDwellMs(isVideo = false, isMotionImage = false, durationMs = 0L, seconds = 1))
+        assertEquals(5_000L, autoplayDwellMs(isVideo = false, isMotionImage = false, durationMs = 0L, seconds = 5))
+        assertEquals(15_000L, autoplayDwellMs(isVideo = false, isMotionImage = false, durationMs = 0L, seconds = 15))
     }
 
     @Test
@@ -31,18 +32,26 @@ class AutoplayPacingTest {
         assertEquals(AUTOPLAY_MIN_SECONDS, autoplaySeconds(-3))
         assertEquals(AUTOPLAY_MAX_SECONDS, autoplaySeconds(120))
         assertEquals(AUTOPLAY_DEFAULT_SECONDS, autoplaySeconds(AUTOPLAY_DEFAULT_SECONDS))
-        assertEquals(1_000L, autoplayDwellMs(isVideo = false, durationMs = 0L, seconds = 0))
+        assertEquals(1_000L, autoplayDwellMs(isVideo = false, isMotionImage = false, durationMs = 0L, seconds = 0))
     }
 
     @Test
     fun videosRunToTheirOwnEndWhateverTheSetting() {
-        assertEquals(9_000L, autoplayDwellMs(isVideo = true, durationMs = 7_000L, seconds = 1))
-        assertEquals(9_000L, autoplayDwellMs(isVideo = true, durationMs = 7_000L, seconds = 15))
+        assertEquals(9_000L, autoplayDwellMs(isVideo = true, isMotionImage = false, durationMs = 7_000L, seconds = 1))
+        assertEquals(9_000L, autoplayDwellMs(isVideo = true, isMotionImage = false, durationMs = 7_000L, seconds = 15))
         // A video whose length MediaStore never reported still moves on, eventually.
         assertEquals(
             AUTOPLAY_VIDEO_FALLBACK_MS + 2_000L,
-            autoplayDwellMs(isVideo = true, durationMs = 0L, seconds = 5)
+            autoplayDwellMs(isVideo = true, isMotionImage = false, durationMs = 0L, seconds = 5)
         )
+    }
+
+    @Test
+    fun motionImagesPlayOnTheirOwnTime() {
+        // A GIF or an animated WebP does not take the user's seconds: it plays for its own fixed
+        // length and then the feed moves on, whatever the setting says.
+        assertEquals(AUTOPLAY_MOTION_IMAGE_MS, autoplayDwellMs(isVideo = false, isMotionImage = true, durationMs = 0L, seconds = 1))
+        assertEquals(AUTOPLAY_MOTION_IMAGE_MS, autoplayDwellMs(isVideo = false, isMotionImage = true, durationMs = 0L, seconds = 15))
     }
 
     @Test
