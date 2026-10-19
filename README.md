@@ -40,7 +40,7 @@
 
 ## 📥 Download & Install
 
-1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest).
+1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest), mirrored on [**GitLab**](https://gitlab.com/realmjunaid/vgallery/-/releases) with the same APK and source archives.
 2. Download **`vgallery_v1.1.0-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
