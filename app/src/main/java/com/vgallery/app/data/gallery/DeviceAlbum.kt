@@ -2,6 +2,7 @@ package com.vgallery.app.data.gallery
 
 import android.net.Uri
 import com.vgallery.app.data.preferences.SortOrder
+import java.text.Normalizer
 
 /** One device folder (MediaStore bucket), like Google Photos groups. */
 data class DeviceAlbum(
@@ -143,26 +144,52 @@ fun groupAlbums(albums: List<DeviceAlbum>): List<AlbumGroup> {
 }
 
 /**
- * The word a folder name opens with, once the digits and the punctuation around it are gone: the
- * part two names of a family agree on. "Camera2" is the Camera family, and "100ANDRO" opens on
- * "ANDRO" so roll 100 and roll 101 gather — a name with no letters at all ("2024") has no word to
- * share and stands alone.
+ * The word a folder name opens with, once the punctuation, the digits and the accents around it are
+ * gone: the part two names of a family agree on. "Camera2" and "Cámara" both land on "camera", and
+ * "100ANDRO" opens on "ANDRO" so roll 100 and roll 101 gather — while a name with no letters at all
+ * ("2024") has no word to share and stands alone.
  */
 private fun albumFamilyKey(name: String): String {
-    val word = albumFamilyWord(name) ?: return name.trim().lowercase()
-    val lowered = word.lowercase()
-    val base = lowered.trim { it.isDigit() }.ifBlank { lowered }
-    // "Downloads" is "Download" to anyone looking at a folder list.
-    return if (base.length > 4 && base.endsWith("s") && !base.endsWith("ss")) base.dropLast(1) else base
+    val word = albumFamilyWord(name) ?: return stripAccents(name.trim().lowercase())
+    return albumStem(word)
 }
 
 /**
- * The shared word as the user wrote it — "WhatsApp", not "whatsapp". Prefers the spelling that is
- * the family word itself, so a heading reads "Camera" and not "Camera2".
+ * A single word reduced to the family it belongs to: accents dropped, a numbering prefix or a
+ * trailing digit ignored ("100ANDRO" → "andro", "Camera2" → "camera"), and a plural folded back to
+ * its singular, because a folder list treats "Downloads" and "Download" as the same name.
+ */
+private fun albumStem(word: String): String {
+    val lowered = stripAccents(word.lowercase())
+    val base = lowered.trim { it.isDigit() }.ifBlank { lowered }
+    return albumPluralStem(base)
+}
+
+/**
+ * A folder list treats a trailing plural as the same name: "Downloads" is "Download", and a word
+ * ending in a sibilant loses the whole "es" — "Buses" is "Bus", "Watches" is "Watch". A plain
+ * "es" is left alone, so "Notes" stays next to "Note" rather than becoming "Not".
+ */
+private fun albumPluralStem(base: String): String {
+    if (base.length <= 4) return base
+    val sibilant = base.endsWith("es") &&
+        (base[base.length - 3] in "sxz" || base.endsWith("ches") || base.endsWith("shes"))
+    return when {
+        sibilant -> base.dropLast(2)
+        base.endsWith("s") && !base.endsWith("ss") -> base.dropLast(1)
+        else -> base
+    }
+}
+
+/**
+ * The shared word as the user wrote it — "WhatsApp", not "whatsapp". Prefers the plain spelling of
+ * the family word, so a heading reads "Camera" and not "Camera2", and keeps the accents the user
+ * typed ("Cámara").
  */
 private fun albumFamilyTitle(key: String, members: List<DeviceAlbum>): String {
     val words = members.mapNotNull { albumFamilyWord(it.name) }
-    return words.firstOrNull { it.lowercase() == key }
+    return words.firstOrNull { stripAccents(it.lowercase()) == key }
+        ?: words.firstOrNull { albumStem(it) == key }
         ?: words.minByOrNull { it.length }
         ?: members.first().name.trim()
 }
@@ -173,12 +200,32 @@ private fun albumFamilyTitle(key: String, members: List<DeviceAlbum>): String {
  * falls back to its first word, so "2024 (1)" still belongs with "2024".
  */
 private fun albumFamilyWord(name: String): String? {
-    val words = name.split(ALBUM_NAME_SEPARATORS).filter { it.isNotBlank() }
+    val words = albumWords(name)
     return words.firstOrNull { word -> word.any(Char::isLetter) } ?: words.firstOrNull()
 }
 
-/** A folder name split into its words: anything that is not a letter or a digit separates them. */
+/** A folder name split into its words: punctuation separates them, and so does a run-together name. */
+private fun albumWords(name: String): List<String> =
+    CAMEL_CASE_BOUNDARY.replace(name, " ")
+        .split(ALBUM_NAME_SEPARATORS)
+        .filter { it.isNotBlank() }
+
+/** Letters without their accents, so "Cámara" and "Camara" are the same folder name. */
+private fun stripAccents(value: String): String =
+    Normalizer.normalize(value, Normalizer.Form.NFD).replace(ALBUM_COMBINING_MARKS, "")
+
+/** Anything that is not a letter or a digit separates the words of a folder name. */
 private val ALBUM_NAME_SEPARATORS = Regex("[^\\p{L}\\p{N}]+")
+
+/**
+ * Where a name runs two words together. "CameraRoll" splits into "Camera" + "Roll"; the short tail
+ * after the capital is what keeps a brand whole — "WhatsApp" stays one word (its tail is "pp"), and
+ * so does "iPhone", which opens with the capital.
+ */
+private val CAMEL_CASE_BOUNDARY = Regex("(?<=[\\p{Ll}\\p{N}]{2})(?=\\p{Lu}[\\p{Ll}\\p{N}]{3,})")
+
+/** Accent marks on their own, after a name has been decomposed. */
+private val ALBUM_COMBINING_MARKS = Regex("\\p{M}+")
 
 /**
  * Home search: the folders whose name contains [query], case-insensitively, in the order they were

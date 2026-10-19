@@ -118,4 +118,48 @@ class AlbumGroupingTest {
             headings(listOf(album("일부"), album("일부 2")))
         )
     }
+
+    @Test
+    fun runTogetherNamesAreSplitIntoWords() {
+        // "CameraRoll" is a camera folder, not a folder called "Cameraroll".
+        assertEquals(
+            listOf("Camera" to listOf("CameraRoll", "Camera Roll")),
+            headings(listOf(album("CameraRoll"), album("Camera Roll")))
+        )
+        // A brand stays one word (its tail after the capital is short) and still meets its spaced
+        // spelling, while the joined device folders meet each other.
+        assertEquals(
+            listOf("WhatsApp" to listOf("WhatsAppImages", "WhatsApp Video")),
+            headings(listOf(album("WhatsAppImages"), album("WhatsApp Video")))
+        )
+        assertEquals(
+            listOf("DCIM" to listOf("DCIM", "DCIM2")),
+            headings(listOf(album("DCIM"), album("DCIM2")))
+        )
+    }
+
+    @Test
+    fun pluralsEndingInASibilantFoldToTheSingular() {
+        assertEquals(
+            listOf("Bus" to listOf("Buses", "Bus")),
+            headings(listOf(album("Buses"), album("Bus")))
+        )
+        assertEquals(
+            listOf("Watch" to listOf("Watches", "Watch")),
+            headings(listOf(album("Watches"), album("Watch")))
+        )
+        // A plain "es" is not a plural ending: "Notes" belongs with "Note", not with "Not".
+        assertEquals(
+            listOf("Note" to listOf("Notes", "Note")),
+            headings(listOf(album("Notes"), album("Note")))
+        )
+    }
+
+    @Test
+    fun accentsDoNotMakeADifferentFolder() {
+        assertEquals(
+            listOf("Cámara" to listOf("Cámara", "Camara")),
+            headings(listOf(album("Cámara"), album("Camara")))
+        )
+    }
 }

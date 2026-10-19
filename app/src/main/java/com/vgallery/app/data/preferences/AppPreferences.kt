@@ -2,8 +2,10 @@ package com.vgallery.app.data.preferences
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
+import com.vgallery.app.data.gallery.AUTOPLAY_DEFAULT_SECONDS
 import com.vgallery.app.data.gallery.TrashedItem
 import com.vgallery.app.data.gallery.appendTrashEntries
+import com.vgallery.app.data.gallery.autoplaySeconds
 import com.vgallery.app.data.gallery.decodeTrashList
 import com.vgallery.app.data.gallery.encodeTrashItem
 import com.vgallery.app.data.gallery.removeTrashEntries
@@ -31,11 +33,13 @@ data class AppSettings(
     val shuffleMedia: Boolean = false,
     val sortOrder: SortOrder = SortOrder.NAME_ASC,
     val autoAdvanceImages: Boolean = false,
-    val autoAdvanceDelaySeconds: Int = 5,
+    val autoAdvanceDelaySeconds: Int = AUTOPLAY_DEFAULT_SECONDS,
     val hapticFeedback: Boolean = true,
     val showFileName: Boolean = true,
     val aspectRatioMode: AspectRatioMode = AspectRatioMode.SMART,
-    val landscapeVideoMode: Boolean = false
+    val landscapeVideoMode: Boolean = false,
+    /** Home: gather folders whose names open the same way under one heading. */
+    val groupSimilarFolders: Boolean = false
 )
 
 /**
@@ -70,6 +74,7 @@ class AppPreferences @Inject constructor(
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val ACCENT_CHOICE = stringPreferencesKey("accent_choice")
         val AMOLED_BLACK = booleanPreferencesKey("amoled_black")
+        val GROUP_SIMILAR_FOLDERS = booleanPreferencesKey("group_similar_folders")
     }
 
     /** The stored preferences; an `IOException` while reading yields empty preferences (defaults). */
@@ -87,7 +92,9 @@ class AppPreferences @Inject constructor(
                 SortOrder.NAME_ASC
             },
             autoAdvanceImages = prefs[Keys.AUTO_ADVANCE_IMAGES] ?: false,
-            autoAdvanceDelaySeconds = prefs[Keys.AUTO_ADVANCE_DELAY] ?: 5,
+            autoAdvanceDelaySeconds = autoplaySeconds(
+                prefs[Keys.AUTO_ADVANCE_DELAY] ?: AUTOPLAY_DEFAULT_SECONDS
+            ),
             hapticFeedback = prefs[Keys.HAPTIC_FEEDBACK] ?: true,
             showFileName = prefs[Keys.SHOW_FILE_NAME] ?: true,
             aspectRatioMode = try {
@@ -95,7 +102,8 @@ class AppPreferences @Inject constructor(
             } catch (_: Exception) {
                 AspectRatioMode.SMART
             },
-            landscapeVideoMode = prefs[Keys.LANDSCAPE_VIDEO_MODE] ?: false
+            landscapeVideoMode = prefs[Keys.LANDSCAPE_VIDEO_MODE] ?: false,
+            groupSimilarFolders = prefs[Keys.GROUP_SIMILAR_FOLDERS] ?: false
         )
     }
 
@@ -149,8 +157,9 @@ class AppPreferences @Inject constructor(
     suspend fun updateAutoAdvanceImages(value: Boolean): Boolean =
         safeEdit { it[Keys.AUTO_ADVANCE_IMAGES] = value }
 
+    /** Autoplay speed, in seconds each photo holds the screen; kept inside what the setting offers. */
     suspend fun updateAutoAdvanceDelay(seconds: Int): Boolean =
-        safeEdit { it[Keys.AUTO_ADVANCE_DELAY] = seconds }
+        safeEdit { it[Keys.AUTO_ADVANCE_DELAY] = autoplaySeconds(seconds) }
 
     suspend fun updateHapticFeedback(value: Boolean): Boolean =
         safeEdit { it[Keys.HAPTIC_FEEDBACK] = value }
@@ -163,6 +172,9 @@ class AppPreferences @Inject constructor(
 
     suspend fun updateLandscapeVideoMode(value: Boolean): Boolean =
         safeEdit { it[Keys.LANDSCAPE_VIDEO_MODE] = value }
+
+    suspend fun updateGroupSimilarFolders(value: Boolean): Boolean =
+        safeEdit { it[Keys.GROUP_SIMILAR_FOLDERS] = value }
 
     suspend fun addRecentFolder(uriString: String, displayName: String): Boolean = safeEdit { prefs ->
         val existing = (prefs[Keys.RECENT_FOLDERS] ?: "")

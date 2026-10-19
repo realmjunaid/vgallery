@@ -45,7 +45,6 @@ interface VGalleryScreens {
         onFolderSelected: (Uri) -> Unit,
         onPlaySelected: (Uri, Int, Boolean) -> Unit,
         onSettingsClick: () -> Unit,
-        onTrashClick: () -> Unit,
         onDeviceGalleryClick: () -> Unit,
     )
 
@@ -65,7 +64,7 @@ interface VGalleryScreens {
     fun LandscapeViewer(folderUri: Uri, startIndex: Int, fresh: Boolean, onBack: (Int) -> Unit, onOpenOtherFolder: (Uri) -> Unit)
 
     @Composable
-    fun Settings(onBack: () -> Unit)
+    fun Settings(onBack: () -> Unit, onTrash: () -> Unit)
 
     @Composable
     fun Trash(onBack: () -> Unit)
@@ -78,12 +77,10 @@ object AppScreens : VGalleryScreens {
         onFolderSelected: (Uri) -> Unit,
         onPlaySelected: (Uri, Int, Boolean) -> Unit,
         onSettingsClick: () -> Unit,
-        onTrashClick: () -> Unit,
         onDeviceGalleryClick: () -> Unit,
     ) = com.vgallery.app.ui.gallery.DeviceGalleryScreen(
         onBack = {},
         onSettingsClick = onSettingsClick,
-        onTrashClick = onTrashClick,
         isHome = true
     )
 
@@ -123,7 +120,8 @@ object AppScreens : VGalleryScreens {
         )
 
     @Composable
-    override fun Settings(onBack: () -> Unit) = SettingsScreen(onBack = onBack)
+    override fun Settings(onBack: () -> Unit, onTrash: () -> Unit) =
+        SettingsScreen(onBack = onBack, onTrashClick = onTrash)
 
     @Composable
     override fun Trash(onBack: () -> Unit) = TrashScreen(onBack = onBack)
@@ -191,9 +189,6 @@ fun VGalleryNavGraph(
                 },
                 onSettingsClick = {
                     navController.navigateFrom(entry, Routes.SETTINGS)
-                },
-                onTrashClick = {
-                    navController.navigateFrom(entry, Routes.TRASH)
                 },
                 onDeviceGalleryClick = {}
             )
@@ -263,7 +258,8 @@ fun VGalleryNavGraph(
 
         composable(Routes.SETTINGS) { entry ->
             screens.Settings(
-                onBack = { navController.popFrom(entry) }
+                onBack = { navController.popFrom(entry) },
+                onTrash = { navController.navigateFrom(entry, Routes.TRASH) }
             )
         }
 

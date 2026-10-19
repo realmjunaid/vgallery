@@ -3,6 +3,7 @@ package com.vgallery.app.ui.gallery
 import android.content.IntentSender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vgallery.app.data.gallery.AUTOPLAY_DEFAULT_SECONDS
 import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DeviceGalleryRepository
@@ -14,6 +15,7 @@ import com.vgallery.app.data.gallery.groupIntoAlbums
 import com.vgallery.app.data.gallery.inTab
 import com.vgallery.app.data.gallery.sortAlbumsForHome
 import com.vgallery.app.data.gallery.sortDevicePhotos
+import com.vgallery.app.data.preferences.AppPreferences
 import com.vgallery.app.data.preferences.SortOrder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -43,16 +45,36 @@ data class DeviceGalleryUiState(
     /** Pull-to-refresh spinner (content stays visible underneath). */
     val isRefreshing: Boolean = false,
     /** Name filter inside the open album. */
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    /** Home: folders whose names open the same way, gathered under one heading (Settings › Library). */
+    val groupSimilarFolders: Boolean = false,
+    /** Autoplay speed: seconds each photo holds the screen before the feed glides on (Settings › Playback). */
+    val autoplaySeconds: Int = AUTOPLAY_DEFAULT_SECONDS
 )
 
 @HiltViewModel
 class DeviceGalleryViewModel @Inject constructor(
-    private val repository: DeviceGalleryRepository
+    private val repository: DeviceGalleryRepository,
+    private val preferences: AppPreferences
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DeviceGalleryUiState())
     val uiState: StateFlow<DeviceGalleryUiState> = _uiState.asStateFlow()
+
+    init {
+        // The two Settings the gallery draws with: home's folder grouping and autoplay's pace.
+        // Collected here so what is chosen in Settings is already in force on the next look.
+        viewModelScope.launch {
+            preferences.settings.collect { settings ->
+                _uiState.update {
+                    it.copy(
+                        groupSimilarFolders = settings.groupSimilarFolders,
+                        autoplaySeconds = settings.autoAdvanceDelaySeconds
+                    )
+                }
+            }
+        }
+    }
 
     // No silent background check on launch: the app is fully offline.
 

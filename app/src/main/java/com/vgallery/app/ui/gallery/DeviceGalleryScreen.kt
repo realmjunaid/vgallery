@@ -17,6 +17,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -32,6 +34,7 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -64,7 +67,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderCopy
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
@@ -130,6 +132,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -156,6 +159,8 @@ import com.vgallery.app.data.gallery.DeviceAlbum
 import com.vgallery.app.data.gallery.DeviceFolderTarget
 import com.vgallery.app.data.gallery.DevicePhotoRow
 import com.vgallery.app.data.gallery.HomeTab
+import com.vgallery.app.data.gallery.autoplayDwellMs
+import com.vgallery.app.data.gallery.autoplayGlideMs
 import com.vgallery.app.data.gallery.formatBytes
 import com.vgallery.app.data.gallery.filterAlbumsByName
 import com.vgallery.app.data.gallery.homeSummary
@@ -193,7 +198,6 @@ import com.vgallery.app.ui.theme.ViewerBackdrop
 fun DeviceGalleryScreen(
     onBack: () -> Unit,
     onSettingsClick: () -> Unit = {},
-    onTrashClick: () -> Unit = {},
     isHome: Boolean = false,
     viewModel: DeviceGalleryViewModel = hiltViewModel()
 ) {
@@ -212,9 +216,6 @@ fun DeviceGalleryScreen(
     var homeQuery by remember { mutableStateOf("") }
     // Folder view mode: the default grid, or a line-by-line list that also shows name and size.
     var listMode by rememberSaveable { mutableStateOf(false) }
-    // Home: gather folders whose names open the same way ("WhatsApp Images" + "WhatsApp Video")
-    // under one heading. Off by default, and the button in the top bar flips it back.
-    var groupFolders by rememberSaveable { mutableStateOf(false) }
     // One grid state per home tab, owned here — not inside AlbumGrid. Opening a folder removes
     // that grid from composition; a state created inside it would be thrown away and Back would
     // land at the top. rememberSaveable also keeps the offset across rotation and process death.
@@ -410,24 +411,6 @@ fun DeviceGalleryScreen(
                 },
                 actions = {
                     if (isHome && uiState.selectedAlbum == null && selectedFolders.isEmpty()) {
-                        // Similar folder names, together or apart. Sits with the other grid-wide
-                        // switches, and says so in colour while it is on.
-                        IconButton(onClick = {
-                            groupFolders = !groupFolders
-                            if (groupFolders && groupAlbums(uiState.albums).none { it.isFamily }) {
-                                toast("No similar folder names to group")
-                            }
-                        }) {
-                            Icon(
-                                imageVector = Icons.Filled.FolderCopy,
-                                contentDescription = if (groupFolders) {
-                                    "Ungroup folders"
-                                } else {
-                                    "Group folders by name"
-                                },
-                                tint = if (groupFolders) Violet400 else TextSecondary
-                            )
-                        }
                         IconButton(onClick = {
                             showHomeSearch = !showHomeSearch
                             if (!showHomeSearch) homeQuery = ""
@@ -449,13 +432,6 @@ fun DeviceGalleryScreen(
                                     tint = TextSecondary
                                 )
                             }
-                        }
-                        IconButton(onClick = onTrashClick) {
-                            Icon(
-                                imageVector = Icons.Filled.Delete,
-                                contentDescription = "Trash",
-                                tint = TextSecondary
-                            )
                         }
                         IconButton(onClick = onSettingsClick) {
                             Icon(
@@ -546,7 +522,7 @@ fun DeviceGalleryScreen(
                                     newFolders = uiState.newFolders,
                                     state = albumGridState,
                                     selected = selectedFolders,
-                                    grouped = groupFolders,
+                                    grouped = uiState.groupSimilarFolders,
                                     onAlbumClick = { album ->
                                         if (selectedFolders.isNotEmpty()) {
                                             selectedFolders = selectedFolders.toggle(album.name)
@@ -648,6 +624,7 @@ fun DeviceGalleryScreen(
                     photos = viewerPhotos,
                     startIndex = viewerIndex,
                     title = uiState.selectedAlbum ?: "",
+                    autoplaySeconds = uiState.autoplaySeconds,
                     onDismiss = { dismissViewer() }
                 )
             }
@@ -1214,12 +1191,6 @@ private fun knownAspectRatio(width: Int, height: Int): Float? {
     return (width.toFloat() / height.toFloat()).coerceIn(0.25f, 4f)
 }
 
-/** Autoplay: how long a still photo (or an animation) holds the screen before the feed moves on. */
-private const val AUTO_PLAY_PHOTO_MS = 3_500L
-
-/** Autoplay: safety net for a video that never reports its end (a codec the device can't finish). */
-private const val AUTO_PLAY_VIDEO_FALLBACK_MS = 30_000L
-
 /**
  * Global feed gesture, Google Drive PDF-viewer style.
  *
@@ -1258,6 +1229,9 @@ private fun Modifier.feedZoomGesture(state: FeedZoomState): Modifier = pointerIn
  * One video inside the continuous feed: full-width like every photo, as many
  * per screen as fit. A poster frame shows until the item is tapped; tapping binds
  * the shared player and plays, everything else stays paused.
+ *
+ * [pageHeight] is set while autoplay runs: the video then owns one whole screen too, and its
+ * frames are fitted inside it rather than cropped to the item's shape.
  */
 @Composable
 private fun FeedVideoItem(
@@ -1266,6 +1240,7 @@ private fun FeedVideoItem(
     uiVisible: Boolean,
     exoPlayer: ExoPlayer,
     videoAspects: MutableMap<Long, Float>,
+    pageHeight: Dp?,
     onTogglePlay: () -> Unit,
     onDoubleTapChrome: () -> Unit
 ) {
@@ -1277,7 +1252,13 @@ private fun FeedVideoItem(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(aspect)
+            .then(
+                if (pageHeight != null) {
+                    Modifier.height(pageHeight)
+                } else {
+                    Modifier.aspectRatio(aspect)
+                }
+            )
             .background(Color.Black)
             .clipToBounds()
     ) {
@@ -1287,7 +1268,7 @@ private fun FeedVideoItem(
             uri = photo.uri,
             isVideo = true,
             contentDescription = photo.name,
-            contentScale = ContentScale.Crop,
+            contentScale = if (pageHeight != null) ContentScale.Fit else ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
         if (!isPlaying) {
@@ -1415,6 +1396,7 @@ private fun DevicePhotoViewer(
     photos: List<DevicePhotoRow>,
     startIndex: Int,
     title: String,
+    autoplaySeconds: Int,
     onDismiss: () -> Unit,
     viewModel: DeviceGalleryViewModel = hiltViewModel()
 ) {
@@ -1443,6 +1425,10 @@ private fun DevicePhotoViewer(
     val targetWidthPx = remember(configuration, density) {
         with(density) { (configuration.screenWidthDp.dp * 2).roundToPx() }.coerceAtLeast(1)
     }
+    // The sliver between feed items, shared by the list and by autoplay's step so a page and the
+    // distance it travels are the same measurement.
+    val feedGap = 2.dp
+    val feedGapPx = remember(density) { with(density) { feedGap.roundToPx() } }
     // Double-tap toggles all chrome (top bar + bottom title) for pure-image viewing.
     var uiVisible by remember { mutableStateOf(true) }
     // One global pinch-zoom (1x-10x) owned by the feed, Google Drive PDF-viewer style.
@@ -1458,8 +1444,11 @@ private fun DevicePhotoViewer(
         mutableIntStateOf(startIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0)))
     }
     // Autoplay: plays the feed one item after another — videos to their end, stills and
-    // animations on a timer — centring each item as it goes.
+    // animations for as long as the user chose — walking the whole feed a screen at a time.
     var autoPlay by remember { mutableStateOf(false) }
+    // The page autoplay last settled on: a step from the item just before it is a glide, anything
+    // else is the start of a run and the page is taken without animating.
+    var autoplayAnchor by remember { mutableIntStateOf(-1) }
     // Delete / info UI state.
     var pendingDelete by remember { mutableStateOf<DevicePhotoRow?>(null) }
     var infoPhoto by remember { mutableStateOf<DevicePhotoRow?>(null) }
@@ -1480,7 +1469,7 @@ private fun DevicePhotoViewer(
         pendingDelete = photo
     }
 
-    /** Autoplay step: hand playback to the next item (the feed then centres it). */
+    /** Autoplay step: hand playback to the next item (the feed then glides its page in). */
     fun advanceAutoPlay() {
         if (!autoPlay) return
         val next = playingIndex + 1
@@ -1553,66 +1542,50 @@ private fun DevicePhotoViewer(
             exoPlayer.pause()
         }
     }
-    // Autoplay pacing: a still (or an animation) holds the screen for a moment, while a video is
-    // advanced by the player the instant it ends. The video timer below is only a safety net for
-    // one that never reports its end — a codec the device cannot decode to the last frame.
+    // Autoplay pacing: a still (or an animation) holds the screen for the seconds the user chose in
+    // Settings, while a video is advanced by the player the instant it ends. The timer here is only
+    // a safety net for a video that never reports its end — a codec the device cannot decode to the
+    // last frame.
     LaunchedEffect(autoPlay, playingIndex) {
         if (!autoPlay) return@LaunchedEffect
         val item = photos.getOrNull(playingIndex) ?: return@LaunchedEffect
         val startedAt = playingIndex
-        val waitMs = if (item.isVideo) {
-            (item.durationMs.takeIf { it > 0L } ?: AUTO_PLAY_VIDEO_FALLBACK_MS) + 2_000L
-        } else {
-            AUTO_PLAY_PHOTO_MS
-        }
-        delay(waitMs)
+        delay(autoplayDwellMs(item.isVideo, item.durationMs, autoplaySeconds))
         // Still on the same item after the wait: nothing ended on its own, so move on.
         if (playingIndex == startedAt) advanceAutoPlay()
     }
-    /** Scrolls the rest of the way until [index] sits centred, or does nothing when it already is. */
-    suspend fun glideToCentre(index: Int) {
-        val info = listState.layoutInfo
-        val viewport = info.viewportSize.height
-        val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return
-        val delta = (viewport - item.size) / 2 - item.offset
-        if (abs(delta) > 1) listState.animateScrollBy(delta.toFloat())
-    }
-
-    /**
-     * Brings [index] to the middle of the screen in one movement. The old version scrolled the item
-     * to the top first and then walked it down to the centre, which read as a jolt in the middle of
-     * playback — the whole point here is that nothing moves unless it is toward its final place.
-     */
-    suspend fun centrePlayingItem(index: Int) {
-        val info = listState.layoutInfo
-        val viewport = info.viewportSize.height
-        if (viewport <= 0) return
-        // Already laid out — the item can be measured, so the distance to the centre is exact.
-        if (info.visibleItemsInfo.any { it.index == index }) {
-            glideToCentre(index)
-            return
-        }
-        // Off screen: an item's shape says where it will land, which is good to within a pixel for
-        // photos. A portrait photo is taller than the screen, so this is the ordinary case, not an
-        // edge case — and any residue the shape got wrong is smoothed out right after.
-        val width = info.viewportSize.width
-        val photo = photos.getOrNull(index)
-        val aspect = photo?.let {
-            if (it.isVideo) videoAspects[it.id] ?: knownAspectRatio(it.width, it.height)
-            else knownAspectRatio(it.width, it.height)
-        }
-        val height = if (aspect != null && aspect > 0f && width > 0) (width / aspect).toInt() else 0
-        if (height in 1 until viewport) {
-            listState.animateScrollToItem(index, -((viewport - height) / 2))
-            glideToCentre(index)
-        } else {
-            listState.animateScrollToItem(index)
-        }
-    }
-    // Autoplay's presentation position: whatever is playing sits in the middle of the screen.
-    // Separate from the pacing above so the wait starts with the scroll, not after it.
+    // Autoplay's own movement. While a run lasts every item is drawn as one full screen, so the feed
+    // travels exactly one screen per step — and always the same way, down. A run that starts here
+    // takes its page without animating; every step after that glides, so nothing jumps back up.
     LaunchedEffect(autoPlay, playingIndex) {
-        if (autoPlay && playingIndex >= 0) centrePlayingItem(playingIndex)
+        if (!autoPlay || playingIndex < 0) {
+            autoplayAnchor = -1
+            return@LaunchedEffect
+        }
+        val from = autoplayAnchor
+        autoplayAnchor = playingIndex
+        if (from != playingIndex - 1) {
+            listState.scrollToItem(playingIndex)
+            return@LaunchedEffect
+        }
+        val info = listState.layoutInfo
+        // The page taking over, if a finger has already brought it into view; otherwise one whole
+        // screen on from wherever the page just left sits. Autoplay leaves the feed free to be
+        // scrolled by hand, so that place is measured instead of assumed.
+        val delta = info.visibleItemsInfo.firstOrNull { it.index == playingIndex }?.let { it.offset }
+            ?: (
+                (info.visibleItemsInfo.firstOrNull { it.index == from }?.offset ?: 0) +
+                    info.viewportSize.height + feedGapPx
+                )
+        if (delta > 0) {
+            listState.animateScrollBy(
+                delta.toFloat(),
+                tween(
+                    durationMillis = autoplayGlideMs(autoplaySeconds).toInt(),
+                    easing = LinearOutSlowInEasing
+                )
+            )
+        }
     }
     // Immersive mode: hiding the UI also hides status + navigation bars,
     // so the whole display shows only images. Restored on dismiss.
@@ -1653,7 +1626,9 @@ private fun DevicePhotoViewer(
             )
         }
     ) { padding ->
-        Box(
+        // BoxWithConstraints for one number: the height of a page. Autoplay draws every item as one
+        // full screen, and this is that screen — the list's own viewport, bar and all.
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -1664,6 +1639,8 @@ private fun DevicePhotoViewer(
                     detectTapGestures(onDoubleTap = { toggleChrome.value() })
                 }
         ) {
+            // Null while the feed scrolls freely; a page height while autoplay runs.
+            val pageHeight = if (autoPlay) maxHeight else null
             LazyColumn(
                 state = listState,
                 // One global pinch-zoom drives the whole feed: the scaled layer below zooms every
@@ -1685,7 +1662,7 @@ private fun DevicePhotoViewer(
                             Modifier
                         }
                     ),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                verticalArrangement = Arrangement.spacedBy(feedGap)
             ) {
                 itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
                     val isPlaying = index == playingIndex
@@ -1696,6 +1673,7 @@ private fun DevicePhotoViewer(
                             uiVisible = uiVisible,
                             exoPlayer = exoPlayer,
                             videoAspects = videoAspects,
+                            pageHeight = pageHeight,
                             onTogglePlay = { togglePlay(index) },
                             onDoubleTapChrome = { toggleChrome.value() }
                         )
@@ -1768,8 +1746,10 @@ private fun DevicePhotoViewer(
                         directDrawable != null
                     // Tap a photo to play it (GIF/WebP/video). Chrome toggles
                     // with double-tap (also here: child taps never reach the feed).
+                    // On an autoplay page the item fills the screen and the photo is fitted inside
+                    // it; the feed keeps its own shape the rest of the time.
                     val tapModifier = Modifier
-                        .fillMaxWidth()
+                        .then(if (pageHeight != null) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
                         .background(Color.DarkGray)
                         .pointerInput(photo.id) {
                             detectTapGestures(
@@ -1780,8 +1760,9 @@ private fun DevicePhotoViewer(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(if (pageHeight != null) Modifier.height(pageHeight) else Modifier)
                             .then(
-                                if (!contentReady && placeholderAspect != null) {
+                                if (pageHeight == null && !contentReady && placeholderAspect != null) {
                                     Modifier.aspectRatio(placeholderAspect)
                                 } else {
                                     Modifier
@@ -1790,7 +1771,7 @@ private fun DevicePhotoViewer(
                             .clipToBounds()
                     ) {
                     // The image layer; the feed zooms it along with every other item.
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = if (pageHeight != null) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
                     if (directDrawable != null) {
                         // Animated GIF/WebP in a platform ImageView: animation
                         // callbacks are native, so playback just works.
@@ -1812,7 +1793,11 @@ private fun DevicePhotoViewer(
                         Image(
                             painter = painter,
                             contentDescription = photo.name,
-                            contentScale = ContentScale.FillWidth,
+                            contentScale = if (pageHeight != null) {
+                                ContentScale.Fit
+                            } else {
+                                ContentScale.FillWidth
+                            },
                             modifier = tapModifier
                         )
                     }

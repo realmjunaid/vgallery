@@ -2,6 +2,7 @@ package com.vgallery.app
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import com.vgallery.app.data.gallery.autoplaySeconds
 import com.vgallery.app.data.preferences.AppPreferences
 import com.vgallery.app.data.preferences.AppSettings
 import com.vgallery.app.data.preferences.AspectRatioMode
@@ -150,7 +151,8 @@ class PreferencesPropertyTest {
                     is Op.Shuffle -> suspend { prefs.updateShuffleMedia(op.v) } to model.copy(shuffleMedia = op.v)
                     is Op.Sort -> suspend { prefs.updateSortOrder(op.v) } to model.copy(sortOrder = op.v)
                     is Op.AutoAdvance -> suspend { prefs.updateAutoAdvanceImages(op.v) } to model.copy(autoAdvanceImages = op.v)
-                    is Op.Delay -> suspend { prefs.updateAutoAdvanceDelay(op.v) } to model.copy(autoAdvanceDelaySeconds = op.v)
+                    is Op.Delay -> suspend { prefs.updateAutoAdvanceDelay(op.v) } to
+                        model.copy(autoAdvanceDelaySeconds = autoplaySeconds(op.v))
                     is Op.Haptic -> suspend { prefs.updateHapticFeedback(op.v) } to model.copy(hapticFeedback = op.v)
                     is Op.ShowName -> suspend { prefs.updateShowFileName(op.v) } to model.copy(showFileName = op.v)
                     is Op.Aspect -> suspend { prefs.updateAspectRatioMode(op.v) } to model.copy(aspectRatioMode = op.v)

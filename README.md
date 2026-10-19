@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
-    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.2.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.3.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -21,7 +21,7 @@
 
 <p align="center">
   <img src="docs/screenshots/home-dark.png" width="220" alt="Home: every folder, newest first, on pure-black AMOLED">
-  <img src="docs/screenshots/home-grouped.png" width="220" alt="Home with the group button on: WhatsApp Images and WhatsApp Video under one heading">
+  <img src="docs/screenshots/home-grouped.png" width="220" alt="Home with grouping on (Settings › Library): WhatsApp Images and WhatsApp Video under one heading">
   <img src="docs/screenshots/home-light.png" width="220" alt="Home in the light theme">
 </p>
 
@@ -33,7 +33,7 @@
 
 <p align="center">
   <img src="docs/screenshots/videos-light.png" width="220" alt="The Videos tab, in the violet accent">
-  <img src="docs/screenshots/settings-dark.png" width="220" alt="Settings: theme, accent, pure black, updates">
+  <img src="docs/screenshots/settings-dark.png" width="220" alt="Settings: autoplay speed, library switches, theme, updates">
   <img src="docs/screenshots/settings-light.png" width="220" alt="Settings in the light theme">
 </p>
 
@@ -52,17 +52,17 @@ demo images — a device-less test has no camera roll.
 
 - **Reels-style vertical scrolling** ⭐ — the heart of VGallery. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
 - **Auto gallery** — every photo on your device shows up instantly, grouped folder-wise (Camera, Download, Screenshots…) just like Google Photos. Nothing to pick, nothing to configure. Each folder card shows its item count and total size, the header totals both and adds how much space the whole thing takes, folders are ordered newest-added first with fresh ones raised to the top behind a small green dot until you open them, and a folder's contents always list A–Z — in *natural* order, so `1(2).png` really does come before `1(10).png`.
-- **Group similar folders** 🗂️ — a button on home gathers folders that share a name into one section, each under its own heading: *WhatsApp Images* and *WhatsApp Video* together under **WhatsApp**, *Camera* with *Camera Roll*, `100ANDRO` with `101ANDRO`. Tap it again and they spread back out exactly as they were. Plurals and numbering are not treated as different folders, and a folder with no relatives stays plainly on its own.
+- **Group similar folders** 🗂️ — flip the switch in **Settings › Library** and home gathers folders that share a name into one section, each under its own heading: *WhatsApp Images* and *WhatsApp Video* together under **WhatsApp**, *Camera* with *Camera Roll*, `100ANDRO` with `101ANDRO`. Turn it off and they spread back out exactly as they were. Matching is forgiving: plurals (*Download*/*Downloads*, *Bus*/*Buses*), numbering, run-together names (*CameraRoll*) and accents (*Cámara*/*Camara*) are all the same folder to it, and a folder with no relatives stays plainly on its own.
 - **Photos & Videos tabs** — home splits the library in two: *Photos* for still images, *Videos* for everything that plays (videos, GIFs and animated WebPs), each as its own folder grid.
 - **Grid or list view** — a toggle next to Delete switches a folder between the thumbnail grid and a line-by-line list showing each file's title and size.
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression. Videos show their poster frame instead of a black box, and start playing only when you tap them. While a video plays, its remaining time counts down in the corner, so how much is left is readable at any moment.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Tap to play** — only the item you tap plays (video, GIF or animated WebP); everything else stays paused to save battery.
-- **Autoplay** ▶️ — the play icon in the full-view feed's top bar plays the whole feed hands-free: videos run to their end and stills move on after a moment, each item gliding to the middle of the screen as it is played, until you tap the button again.
+- **Autoplay** ▶️ — the play icon in the full-view feed's top bar plays the whole feed hands-free. Every item is shown as one full screen and the feed glides up exactly one screen at a time, so nothing ever jumps back: videos run to their own end, and photos hold for the length you choose in **Settings › Playback** (1–15 seconds), until you tap the button again.
 - **Pinch-to-zoom** — one global pinch scales the whole vertical feed together, photos and videos alike, from 1x up to 10x and anchored under your fingers. While zoomed, drag sideways to pan (clamped so no blank space shows) and drag or fling up and down to keep scrolling through every item — a diagonal drag does both at once. Pinch back to fit to scroll normally again.
 - **Share, delete, search** — system share sheet, folder search from home (it finds folders, not loose files — home is where you pick a folder), long-press multi-select in folders and on home with batch actions.
 - **Built-in updates** ⬆️ — the app checks GitHub for a newer release (at most every six hours, and only if you leave it on) and offers *Update now* / *Cancel*. Update now downloads the APK, verifies its checksum and signature, and opens Android's installer without a browser.
-- **Trash** 🗑️ — deleting moves items to a Google-Photos-style Trash instead of wiping them: everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent). A daily job drops entries whose files are already gone, and once something has sat for 30 days the app asks before deleting it — Android will not do that from the background.
+- **Trash** 🗑️ — **Settings › Library › Trash**: deleting moves items to a Google-Photos-style Trash instead of wiping them, and everything stays restorable for 30 days, with *Restore*, *Delete forever* and *Empty trash* (permanent deletion still asks for Android's consent). A daily job drops entries whose files are already gone, and once something has sat for 30 days the app asks before deleting it — Android will not do that from the background.
 - **Move to folder** 📁 — pick photos or videos inside a folder and move them into any other folder on the device in one step: long-press to start selecting, and the Move action appears with Share, Details and Delete.
 - **Details sheet** — size, resolution, date, folder and type for any photo or selection.
 - **Immersive mode** — one tap hides the top bar, titles, status bar and navigation buttons for pure full-screen viewing.
@@ -73,7 +73,7 @@ demo images — a device-less test has no camera roll.
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest), mirrored on [**GitLab**](https://gitlab.com/realmjunaid/vgallery/-/releases) with the same APK and source archives.
-2. Download **`vgallery_v1.1.2-release.apk`** (under *Assets*).
+2. Download **`vgallery_v1.1.3-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
 

@@ -20,18 +20,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
@@ -40,6 +43,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Card
@@ -70,11 +74,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vgallery.app.BuildConfig
+import com.vgallery.app.data.gallery.AUTOPLAY_DEFAULT_SECONDS
+import com.vgallery.app.data.gallery.AUTOPLAY_MAX_SECONDS
+import com.vgallery.app.data.gallery.AUTOPLAY_MIN_SECONDS
 import com.vgallery.app.data.preferences.AccentChoice
 import com.vgallery.app.data.preferences.ThemeMode
 import com.vgallery.app.data.preferences.ThemeSettings
@@ -112,21 +120,24 @@ private fun openLink(context: Context, url: String) {
 }
 
 /**
- * Settings: the updater, then the app's own About pages. Every playback preference the app ships
- * with is chosen for the common case, so there is nothing to tune — see
- * [com.vgallery.app.data.preferences.AppPreferences] for the stored defaults the rest of the app
- * still reads.
+ * Settings: appearance, playback pace, the library's own switches, the updater and the app's About
+ * pages. Everything tuned here is stored once and read back by the screens that use it — the
+ * gallery draws with the grouping switch and the autoplay speed, and the theme repaints the app.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onTrashClick: () -> Unit = {},
     viewModel: UpdateViewModel = hiltViewModel(),
     themeViewModel: ThemeSettingsViewModel = hiltViewModel(),
+    libraryViewModel: LibrarySettingsViewModel = hiltViewModel(),
 ) {
     val updateState by viewModel.state.collectAsStateWithLifecycle()
     val autoCheck by viewModel.autoCheckEnabled.collectAsStateWithLifecycle()
     val appearance by themeViewModel.theme.collectAsStateWithLifecycle()
+    val groupSimilarFolders by libraryViewModel.groupSimilarFolders.collectAsStateWithLifecycle()
+    val autoplaySeconds by libraryViewModel.autoplaySeconds.collectAsStateWithLifecycle()
     val context = LocalContext.current
     SettingsScreen(
         onBack = onBack,
@@ -139,12 +150,17 @@ fun SettingsScreen(
         onThemeModeChange = themeViewModel::setMode,
         onAccentChange = themeViewModel::setAccent,
         onAmoledChange = themeViewModel::setAmoledBlack,
+        onTrashClick = onTrashClick,
+        groupSimilarFolders = groupSimilarFolders,
+        onGroupSimilarFoldersChange = libraryViewModel::setGroupSimilarFolders,
+        autoplaySeconds = autoplaySeconds,
+        onAutoplaySecondsChange = libraryViewModel::setAutoplaySeconds,
     )
 }
 
 /**
- * The screen itself, with everything hoisted: the Settings destination fills it from the updater
- * and the appearance store, and tests drive it with plain values.
+ * The screen itself, with everything hoisted: the Settings destination fills it from the updater,
+ * the appearance store and the library store, and tests drive it with plain values.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,6 +175,11 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit = {},
     onAccentChange: (AccentChoice) -> Unit = {},
     onAmoledChange: (Boolean) -> Unit = {},
+    onTrashClick: () -> Unit = {},
+    groupSimilarFolders: Boolean = false,
+    onGroupSimilarFoldersChange: (Boolean) -> Unit = {},
+    autoplaySeconds: Int = AUTOPLAY_DEFAULT_SECONDS,
+    onAutoplaySecondsChange: (Int) -> Unit = {},
 ) {
     var page by remember { mutableStateOf<AboutPage?>(null) }
 
@@ -211,6 +232,11 @@ fun SettingsScreen(
                     onThemeModeChange = onThemeModeChange,
                     onAccentChange = onAccentChange,
                     onAmoledChange = onAmoledChange,
+                    onTrashClick = onTrashClick,
+                    groupSimilarFolders = groupSimilarFolders,
+                    onGroupSimilarFoldersChange = onGroupSimilarFoldersChange,
+                    autoplaySeconds = autoplaySeconds,
+                    onAutoplaySecondsChange = onAutoplaySecondsChange,
                 )
                 AboutPage.APP -> AboutAppPage()
                 AboutPage.DEVELOPER -> AboutDeveloperPage(onOpenLink = onOpenLink)
@@ -253,6 +279,11 @@ private fun SettingsMenu(
     onThemeModeChange: (ThemeMode) -> Unit,
     onAccentChange: (AccentChoice) -> Unit,
     onAmoledChange: (Boolean) -> Unit,
+    onTrashClick: () -> Unit,
+    groupSimilarFolders: Boolean,
+    onGroupSimilarFoldersChange: (Boolean) -> Unit,
+    autoplaySeconds: Int,
+    onAutoplaySecondsChange: (Int) -> Unit,
 ) {
     SettingsSectionHeader("Appearance")
 
@@ -291,6 +322,45 @@ private fun SettingsMenu(
                 onCheckedChange = onAmoledChange
             )
         }
+    }
+
+    SettingsSectionHeader("Playback")
+
+    SettingsCard {
+        SettingsStepperItem(
+            icon = Icons.Filled.PlayArrow,
+            title = "Autoplay speed",
+            subtitle = "Seconds each photo stays before autoplay glides on. " +
+                "A video always plays to its own end.",
+            value = "${autoplaySeconds}s",
+            canDecrease = autoplaySeconds > AUTOPLAY_MIN_SECONDS,
+            canIncrease = autoplaySeconds < AUTOPLAY_MAX_SECONDS,
+            decreaseContentDescription = "Faster autoplay",
+            increaseContentDescription = "Slower autoplay",
+            onDecrease = { onAutoplaySecondsChange(autoplaySeconds - 1) },
+            onIncrease = { onAutoplaySecondsChange(autoplaySeconds + 1) },
+        )
+    }
+
+    SettingsSectionHeader("Library")
+
+    SettingsCard {
+        SettingsSwitchItem(
+            icon = Icons.Filled.Folder,
+            title = "Group similar folders",
+            subtitle = "Home: folders whose names match open under one heading",
+            checked = groupSimilarFolders,
+            onCheckedChange = onGroupSimilarFoldersChange
+        )
+
+        HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
+
+        SettingsClickItem(
+            icon = Icons.Filled.Delete,
+            title = "Trash",
+            subtitle = "Deleted items, restorable for 30 days",
+            onClick = onTrashClick
+        )
     }
 
     SettingsSectionHeader("Updates")
@@ -486,14 +556,16 @@ private fun AboutAppPage() {
             icon = Icons.Filled.PlayArrow,
             title = "Continuous viewer",
             body = "Scroll every photo and video in one feed, pinch to zoom 1x-10x, and tap Autoplay " +
-                "to play the whole feed one item after another."
+                "to watch the whole feed: each item glides in a screen at a time, and how long a " +
+                "photo holds is yours to set in Settings."
         )
         HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
         AboutBullet(
             icon = Icons.Filled.PhotoLibrary,
             title = "Trash and move",
-            body = "Deleting goes to a Google Photos style Trash first, restorable for 30 days. " +
-                "Items can also be moved to another folder without leaving the app."
+            body = "Deleting goes to a Google Photos style Trash first, restorable for 30 days — " +
+                "the Trash lives in Settings. Items can also be moved to another folder without " +
+                "leaving the app."
         )
         HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
         AboutBullet(
@@ -706,6 +778,80 @@ private fun SettingsSwitchItem(
                 uncheckedBorderColor = TextDisabled
             )
         )
+    }
+}
+
+@Composable
+private fun SettingsStepperItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    value: String,
+    canDecrease: Boolean,
+    canIncrease: Boolean,
+    decreaseContentDescription: String,
+    increaseContentDescription: String,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Violet400,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextPrimary
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        IconButton(
+            onClick = onDecrease,
+            enabled = canDecrease,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Remove,
+                contentDescription = decreaseContentDescription,
+                tint = if (canDecrease) TextPrimary else TextDisabled,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 34.dp)
+        )
+        IconButton(
+            onClick = onIncrease,
+            enabled = canIncrease,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = increaseContentDescription,
+                tint = if (canIncrease) TextPrimary else TextDisabled,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 package com.vgallery.app
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -12,9 +13,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Settings carries the updater row and the two About pages, and nothing else: the playback options
- * it used to show were removed on purpose, and "About Developer" is the entry that says who builds
- * VGallery. The screen's state is hoisted, so these tests drive it with plain values.
+ * Settings carries the appearance, playback and library rows, the updater, and the two About pages:
+ * the autoplay speed and the home grouping switch live here now, and so does the Trash. "About
+ * Developer" is the entry that says who builds VGallery. The screen's state is hoisted, so these
+ * tests drive it with plain values.
  */
 @RunWith(AndroidJUnit4::class)
 class SettingsAboutTest {
@@ -28,6 +30,11 @@ class SettingsAboutTest {
         onCheckNow: () -> Unit = {},
         onAutoCheckChange: (Boolean) -> Unit = {},
         onOpenLink: (String) -> Unit = {},
+        onTrashClick: () -> Unit = {},
+        groupSimilarFolders: Boolean = false,
+        onGroupSimilarFoldersChange: (Boolean) -> Unit = {},
+        autoplaySeconds: Int = 5,
+        onAutoplaySecondsChange: (Int) -> Unit = {},
     ) {
         compose.setContent {
             SettingsScreen(
@@ -37,6 +44,11 @@ class SettingsAboutTest {
                 onCheckNow = onCheckNow,
                 onAutoCheckChange = onAutoCheckChange,
                 onOpenLink = onOpenLink,
+                onTrashClick = onTrashClick,
+                groupSimilarFolders = groupSimilarFolders,
+                onGroupSimilarFoldersChange = onGroupSimilarFoldersChange,
+                autoplaySeconds = autoplaySeconds,
+                onAutoplaySecondsChange = onAutoplaySecondsChange,
             )
         }
     }
@@ -55,6 +67,43 @@ class SettingsAboutTest {
         compose.onNodeWithText("Sort Order").assertDoesNotExist()
         compose.onNodeWithText("Haptic Feedback").assertDoesNotExist()
         compose.onNodeWithText("Auto-Advance Images").assertDoesNotExist()
+    }
+
+    @Test
+    fun settingsOffersThePlaybackAndLibraryRows() {
+        openSettings()
+
+        compose.onNodeWithText("Autoplay speed").assertExists()
+        compose.onNodeWithText("Group similar folders").assertExists()
+        compose.onNodeWithText("Trash").assertExists()
+    }
+
+    @Test
+    fun theAutoplayStepperWalksTheSpeedUpAndDown() {
+        val steps = mutableListOf<Int>()
+        openSettings(autoplaySeconds = 5, onAutoplaySecondsChange = { steps += it })
+
+        compose.onNodeWithContentDescription("Slower autoplay").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Faster autoplay").performScrollTo().performClick()
+
+        // Slower means more seconds per photo; faster means fewer.
+        assertEquals(listOf(6, 4), steps)
+    }
+
+    @Test
+    fun theGroupingSwitchAndTheTrashRowReport() {
+        var grouped: Boolean? = null
+        var trashed = 0
+        openSettings(
+            onTrashClick = { trashed++ },
+            onGroupSimilarFoldersChange = { grouped = it }
+        )
+
+        compose.onNodeWithText("Group similar folders").performScrollTo().performClick()
+        compose.onNodeWithText("Trash").performScrollTo().performClick()
+
+        assertEquals(true, grouped)
+        assertEquals(1, trashed)
     }
 
     @Test
