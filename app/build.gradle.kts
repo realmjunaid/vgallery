@@ -41,7 +41,7 @@ val missingReleaseSigning: List<String> = buildList {
 }
 
 /** Single place for the version: also names the APK file (vgallery_vX.Y.Z.apk). */
-val APP_VERSION_NAME = "1.1.6"
+val APP_VERSION_NAME = "1.1.7"
 
 android {
     namespace = "com.vgallery.app"
@@ -62,7 +62,7 @@ android {
         targetSdk = 36
         // VGallery starts fresh: new package identity, first version.
         // Bump APP_VERSION_NAME (and code) here; the APK file is named from it below.
-        versionCode = 21
+        versionCode = 22
         versionName = APP_VERSION_NAME
     }
 
@@ -177,6 +177,7 @@ dependencies {
 
     // Core
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)

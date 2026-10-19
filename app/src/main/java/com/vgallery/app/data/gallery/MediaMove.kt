@@ -32,6 +32,13 @@ sealed interface MoveResult {
         val target: DeviceFolderTarget
     ) : MoveResult
 
+    /**
+     * Android won't let MediaStore move a file into this folder (its top-level directory isn't one
+     * MediaStore allows for this media type). The screen should let the user grant access to the
+     * folder via the system picker, then retry through [DeviceGalleryRepository.moveMediaViaSaf].
+     */
+    data class NeedsFolderAccess(val target: DeviceFolderTarget) : MoveResult
+
     data class Failed(val message: String) : MoveResult
 }
 

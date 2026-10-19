@@ -4,14 +4,18 @@ import android.Manifest
 import android.app.RecoverableSecurityException
 import android.content.ContentUris
 import android.content.ContentValues
+import android.content.Intent
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
 import androidx.core.content.ContextCompat
-import com.vgallery.app.data.preferences.AppPreferences
+import com.vgallery.app.data.gallery.MoveResult
 import com.vgallery.app.data.gallery.TrashedItem
+import com.vgallery.app.data.preferences.AppPreferences
 import com.vgallery.app.data.gallery.filterTrashed
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -514,6 +518,17 @@ class DeviceGalleryRepository @Inject constructor(
                 cachedPhotos = null
                 MoveResult.Moved
             } catch (e: Exception) {
+                val msg = e.message ?: ""
+                if (msg.contains("not allowed", ignoreCase = true) ||
+                    msg.contains("Primary directory", ignoreCase = true)) {
+                    // MediaStore won't accept this destination. If the user has already granted
+                    // access to it, move through SAF; otherwise ask for it.
+                    val treeUri = moveTreeUriFor(target.relativePath)
+                    if (treeUri != null) {
+                        return@withContext moveMediaViaSaf(uris, target, treeUri)
+                    }
+                    return@withContext MoveResult.NeedsFolderAccess(target)
+                }
                 MoveResult.Failed(e.message ?: "Move failed")
             }
         }
@@ -575,7 +590,90 @@ class DeviceGalleryRepository @Inject constructor(
             null
         }
 
-    /** The image and video collections to scan, across API levels. */
+    /**
+     * Moves [uris] into [target] using SAF, because MediaStore won't allow a RELATIVE_PATH update
+     * for this destination (its top-level directory isn't one MediaStore permits). The user must have
+     * granted access to the destination tree ([treeUri]) first. Files are copied, then the originals
+     * are deleted (with consent if the app doesn't own them).
+     */
+    suspend fun moveMediaViaSaf(
+        uris: List<Uri>,
+        target: DeviceFolderTarget,
+        treeUri: Uri
+    ): MoveResult = withContext(Dispatchers.IO) {
+        if (uris.isEmpty()) return@withContext MoveResult.Moved
+        val tree = DocumentFile.fromTreeUri(context, treeUri)
+            ?: return@withContext MoveResult.Failed("Can't access that folder")
+        // Copy each file that isn't already there; delete the originals afterwards.
+        val copied = mutableListOf<Uri>()
+        for (uri in uris) {
+            val name = displayNameOf(uri) ?: continue
+            // Skip if a file with this name already exists (retry after consent).
+            if (tree.findFile(name) != null) {
+                copied += uri
+                continue
+            }
+            val mime = mimeTypeOf(uri)
+            val outFile = tree.createFile(mime, name) ?: continue
+            val input = context.contentResolver.openInputStream(uri) ?: continue
+            val out = context.contentResolver.openOutputStream(outFile.uri) ?: continue
+            try {
+                input.use { it.copyTo(out) }
+            } finally {
+                out.close()
+            }
+            copied += uri
+        }
+        if (copied.isEmpty()) return@withContext MoveResult.Failed("Move failed")
+        // Delete the originals (consent may be required).
+        val survivors = mutableListOf<Uri>()
+        for (uri in copied) {
+            try {
+                context.contentResolver.delete(uri, null, null)
+            } catch (e: RecoverableSecurityException) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) survivors += uri
+                else return@withContext MoveResult.NeedsConsent(e.userAction.actionIntent.intentSender, listOf(uri), target)
+            } catch (_: SecurityException) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) survivors += uri
+                else return@withContext MoveResult.Failed("Permission denied")
+            }
+        }
+        if (survivors.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val pending = MediaStore.createDeleteRequest(context.contentResolver, survivors)
+            return@withContext MoveResult.NeedsConsent(pending.intentSender, survivors, target)
+        }
+        cachedPhotos = null
+        MoveResult.Moved
+    }
+
+    private fun mimeTypeOf(uri: Uri): String =
+        try {
+            context.contentResolver.getType(uri) ?: "application/octet-stream"
+        } catch (_: Exception) {
+            "application/octet-stream"
+        }
+    /** Remembers the SAF tree URI the user granted for [relativePath], so the next move is silent. */
+    fun rememberMoveTreeUri(relativePath: String, uri: Uri) {
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: Exception) {
+            // Some providers don't support persistable permissions; the in-memory cache still helps.
+        }
+        context.getSharedPreferences("vgallery_move", Context.MODE_PRIVATE)
+            .edit()
+            .putString("tree_$relativePath", uri.toString())
+            .apply()
+    }
+
+    /** The SAF tree URI previously granted for [relativePath], or null. */
+    fun moveTreeUriFor(relativePath: String): Uri? =
+        context.getSharedPreferences("vgallery_move", Context.MODE_PRIVATE)
+            .getString("tree_$relativePath", null)
+            ?.let { Uri.parse(it) }
+
     private fun mediaCollections(): List<Uri> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             listOf(

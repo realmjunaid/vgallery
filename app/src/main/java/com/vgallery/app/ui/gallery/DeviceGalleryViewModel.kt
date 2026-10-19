@@ -1,6 +1,7 @@
 package com.vgallery.app.ui.gallery
 
 import android.content.IntentSender
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vgallery.app.data.gallery.AUTOPLAY_DEFAULT_SECONDS
@@ -301,6 +302,21 @@ class DeviceGalleryViewModel @Inject constructor(
                         }
                         pending = result.pending
                     }
+                    is MoveResult.NeedsFolderAccess -> {
+                        // MediaStore won't let a file move into this folder: ask the user to grant
+                        // access to it, then retry through SAF.
+                        consentGate?.complete(false)
+                        val gate = CompletableDeferred<Uri?>()
+                        folderAccessGate = gate
+                        _folderAccessRequests.emit(result.target)
+                        val treeUri = gate.await()
+                        if (treeUri == null) { onDone(false, "Move cancelled"); return@launch }
+                        // Persist the grant so the next move into this folder is silent.
+                        repository.rememberMoveTreeUri(result.target.relativePath, treeUri)
+                        // Retry through SAF.
+                        moveToFolderViaSaf(rows, target, treeUri, onDone)
+                        return@launch
+                    }
                     is MoveResult.Failed -> {
                         onDone(false, result.message)
                         return@launch
@@ -311,7 +327,51 @@ class DeviceGalleryViewModel @Inject constructor(
         }
     }
 
-    /** Rows inside the given folders for the selected tab (for folder share/info/delete). */
+    // ── Folder access (SAF) for moves into non-standard directories ────────────────
+    private val _folderAccessRequests = MutableSharedFlow<DeviceFolderTarget>(extraBufferCapacity = 1)
+    val folderAccessRequests: SharedFlow<DeviceFolderTarget> = _folderAccessRequests.asSharedFlow()
+    private var folderAccessGate: CompletableDeferred<Uri?>? = null
+
+    fun answerFolderAccess(treeUri: Uri?) {
+        folderAccessGate?.complete(treeUri)
+        folderAccessGate = null
+    }
+
+    /**
+     * Moves [rows] into [target] using SAF (for destinations MediaStore won't accept). The user must
+     * have granted access to the destination tree ([treeUri]) first.
+     */
+    fun moveToFolderViaSaf(
+        rows: List<DevicePhotoRow>,
+        target: DeviceFolderTarget,
+        treeUri: Uri,
+        onDone: (Boolean, String) -> Unit
+    ) {
+        if (rows.isEmpty()) return
+        val label = if (rows.size > 1) "Moved ${rows.size} items to ${target.displayName}"
+        else "Moved to ${target.displayName}"
+        viewModelScope.launch {
+            var pending = rows.map { it.uri }
+            var rounds = 0
+            while (rounds <= rows.size) {
+                rounds++
+                when (val result = repository.moveMediaViaSaf(pending, target, treeUri)) {
+                    is MoveResult.Moved -> { reload(); onDone(true, label); return@launch }
+                    is MoveResult.NeedsConsent -> {
+                        consentGate?.complete(false)
+                        val gate = CompletableDeferred<Boolean>()
+                        consentGate = gate
+                        _consentRequests.emit(result.intentSender)
+                        if (!gate.await()) { onDone(false, "Move cancelled"); return@launch }
+                        pending = result.pending
+                    }
+                    is MoveResult.NeedsFolderAccess -> { onDone(false, "Folder access needed"); return@launch }
+                    is MoveResult.Failed -> { onDone(false, result.message); return@launch }
+                }
+            }
+            onDone(false, "Move failed")
+        }
+    }
     fun photosInFolders(names: Set<String>): List<DevicePhotoRow> {
         if (names.isEmpty()) return emptyList()
         val normalized = names.map { it.ifBlank { "Unknown" } }.toSet()

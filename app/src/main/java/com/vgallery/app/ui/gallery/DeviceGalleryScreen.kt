@@ -292,6 +292,18 @@ fun DeviceGalleryScreen(
     ) { result ->
         viewModel.answerConsent(result.resultCode == Activity.RESULT_OK)
     }
+    // System folder picker for moves into directories MediaStore won't accept (Android 10+):
+    // the user grants access once, and it's remembered for that folder.
+    val folderAccessLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        viewModel.answerFolderAccess(uri)
+    }
+    LaunchedEffect(Unit) {
+        viewModel.folderAccessRequests.collect { target ->
+            folderAccessLauncher.launch(null)
+        }
+    }
     LaunchedEffect(Unit) {
         viewModel.consentRequests.collect { sender ->
             consentLauncher.launch(IntentSenderRequest.Builder(sender).build())

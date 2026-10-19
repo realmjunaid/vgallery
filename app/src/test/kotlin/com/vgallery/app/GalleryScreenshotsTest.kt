@@ -390,8 +390,8 @@ class GalleryScreenshotsTest {
     )
 
     private val sampleRelease = AppRelease(
-        versionName = "1.1.6",
-        tag = "v1.1.6",
+        versionName = "1.1.7",
+        tag = "v1.1.7",
         notes = """
             - **Smooth autoplay** - the feed keeps showing as many photos per screen as before, and the item being played is the one in the middle: each step glides up into the middle in a single movement, with no jump up or down
             - **Autoplay speed** - Settings > Playback: how long each photo holds the screen, 1 to 15 seconds (a video still plays to its own end; a GIF or animated WebP plays for its own length)
@@ -399,8 +399,8 @@ class GalleryScreenshotsTest {
             - **Search in move dialog** - find the destination folder by name
             - **Select all** - one tap selects every item once you've started selecting
         """.trimIndent(),
-        apkUrl = "https://github.com/realmjunaid/vgallery/releases/download/v1.1.6/vgallery_v1.1.6-release.apk",
-        apkSha256 = "fd740deaf43f92b32e0062b5282148269545e4e9b1a80cb670215916bf79f7f0",
+        apkUrl = "https://github.com/realmjunaid/vgallery/releases/download/v1.1.7/vgallery_v1.1.7-release.apk",
+        apkSha256 = "b44d3b9e6cd371b8c815a83f577ce8227d9b6cbfbd0efa688dfaab26f0707e15",
         source = "github"
     )
 }
