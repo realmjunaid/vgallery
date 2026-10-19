@@ -27,9 +27,26 @@ fun autoplayDwellMs(isVideo: Boolean, durationMs: Long, seconds: Int): Long =
         autoplaySeconds(seconds) * 1_000L
     }
 
+/** Glide length is kept inside these bounds, however short or long the step turns out to be. */
+private const val AUTOPLAY_GLIDE_MIN_MS = 250L
+private const val AUTOPLAY_GLIDE_MAX_MS = 1_000L
+
+/** Slower autoplay earns a longer glide: this much per second of the setting. */
+private const val AUTOPLAY_GLIDE_PER_SECOND_MS = 60L
+
+/** And a step that covers more screen earns a little longer still: a millisecond per these pixels. */
+private const val AUTOPLAY_GLIDE_STRETCH_PX = 6L
+private const val AUTOPLAY_GLIDE_STRETCH_MAX_MS = 400L
+
 /**
- * How long the glide to the next item takes. A slower autoplay earns a longer, calmer move, so the
- * feed never looks like it is racing the picture it has just left.
+ * How long the glide from one item to the next takes. A slower autoplay earns a longer, calmer move
+ * so the feed never looks like it is racing the picture it has just left, and a step that covers most
+ * of the screen — a tall photo getting out of the way — is given a little longer still so it glides
+ * rather than flicks. [distancePx] is that step, in pixels.
  */
-fun autoplayGlideMs(seconds: Int): Long =
-    (autoplaySeconds(seconds) * 60L).coerceIn(250L, 600L)
+fun autoplayGlideMs(seconds: Int, distancePx: Int = 0): Long {
+    val pace = autoplaySeconds(seconds) * AUTOPLAY_GLIDE_PER_SECOND_MS
+    val stretch = (distancePx / AUTOPLAY_GLIDE_STRETCH_PX)
+        .coerceIn(0L, AUTOPLAY_GLIDE_STRETCH_MAX_MS)
+    return (pace + stretch).coerceIn(AUTOPLAY_GLIDE_MIN_MS, AUTOPLAY_GLIDE_MAX_MS)
+}

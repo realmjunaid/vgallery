@@ -556,8 +556,8 @@ private fun AboutAppPage() {
             icon = Icons.Filled.PlayArrow,
             title = "Continuous viewer",
             body = "Scroll every photo and video in one feed, pinch to zoom 1x-10x, and tap Autoplay " +
-                "to watch the whole feed: each item glides in a screen at a time, and how long a " +
-                "photo holds is yours to set in Settings."
+                "to watch the whole feed: each item comes to the middle and the feed glides on to " +
+                "the next, and how long a photo holds is yours to set in Settings."
         )
         HorizontalDivider(color = SurfaceElevated, thickness = 0.5.dp)
         AboutBullet(

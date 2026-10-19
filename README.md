@@ -4,7 +4,7 @@
 
 <p>
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
-    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.3.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
+    <img src="https://img.shields.io/badge/Download-VGallery_v1.1.4.apk-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download APK">
   </a>
 </p>
 
@@ -58,7 +58,7 @@ demo images — a device-less test has no camera roll.
 - **Continuous full view** — tap any photo to enter a Drive-style vertical feed: every photo edge-to-edge, full original resolution, zero compression. Videos show their poster frame instead of a black box, and start playing only when you tap them. While a video plays, its remaining time counts down in the corner, so how much is left is readable at any moment.
 - **Smart counter** — a tiny `23 / 100` indicator follows you as you scroll.
 - **Tap to play** — only the item you tap plays (video, GIF or animated WebP); everything else stays paused to save battery.
-- **Autoplay** ▶️ — the play icon in the full-view feed's top bar plays the whole feed hands-free. Every item is shown as one full screen and the feed glides up exactly one screen at a time, so nothing ever jumps back: videos run to their own end, and photos hold for the length you choose in **Settings › Playback** (1–15 seconds), until you tap the button again.
+- **Autoplay** ▶️ — the play icon in the full-view feed's top bar plays the whole feed hands-free. The feed keeps showing as many photos per screen as always, and the item being played is the one that comes to the middle: when its turn is over, the next glides smoothly up into the middle too. Videos run to their own end, photos hold for the length you choose in **Settings › Playback** (1–15 seconds), until you tap the button again.
 - **Pinch-to-zoom** — one global pinch scales the whole vertical feed together, photos and videos alike, from 1x up to 10x and anchored under your fingers. While zoomed, drag sideways to pan (clamped so no blank space shows) and drag or fling up and down to keep scrolling through every item — a diagonal drag does both at once. Pinch back to fit to scroll normally again.
 - **Share, delete, search** — system share sheet, folder search from home (it finds folders, not loose files — home is where you pick a folder), long-press multi-select in folders and on home with batch actions.
 - **Built-in updates** ⬆️ — the app checks GitHub for a newer release (at most every six hours, and only if you leave it on) and offers *Update now* / *Cancel*. Update now downloads the APK, verifies its checksum and signature, and opens Android's installer without a browser.
@@ -73,7 +73,7 @@ demo images — a device-less test has no camera roll.
 ## 📥 Download & Install
 
 1. Go to the [**latest release**](https://github.com/realmjunaid/vgallery/releases/latest), mirrored on [**GitLab**](https://gitlab.com/realmjunaid/vgallery/-/releases) with the same APK and source archives.
-2. Download **`vgallery_v1.1.3-release.apk`** (under *Assets*).
+2. Download **`vgallery_v1.1.4-release.apk`** (under *Assets*).
 3. Open the file on your phone and tap **Install** (allow *Install unknown apps* if asked).
 4. Open **VGallery**, allow photo access — done, your gallery is ready.
 

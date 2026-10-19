@@ -49,7 +49,16 @@ class AutoplayPacingTest {
     fun theGlideIsShortButNeverSnappy() {
         // A slow autoplay glides more calmly than a fast one, inside a fixed window.
         assertTrue(autoplayGlideMs(1) in 200L..400L)
-        assertTrue(autoplayGlideMs(15) in 400L..700L)
+        assertTrue(autoplayGlideMs(15) in 600L..1_100L)
         assertTrue(autoplayGlideMs(15) > autoplayGlideMs(1))
+    }
+
+    @Test
+    fun aLongerStepIsGivenALittleLonger() {
+        // A tall photo getting out of the way covers most of the screen: better a moment longer than
+        // a flick nobody can follow. It stays inside the window, and a step of nothing changes nothing.
+        assertEquals(autoplayGlideMs(5), autoplayGlideMs(5, distancePx = 0))
+        assertTrue(autoplayGlideMs(5, distancePx = 2_400) > autoplayGlideMs(5))
+        assertTrue(autoplayGlideMs(15, distancePx = 10_000) <= 1_000L)
     }
 }

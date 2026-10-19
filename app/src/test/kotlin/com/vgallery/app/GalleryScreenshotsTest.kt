@@ -390,15 +390,13 @@ class GalleryScreenshotsTest {
     )
 
     private val sampleRelease = AppRelease(
-        versionName = "1.1.3",
-        tag = "v1.1.3",
+        versionName = "1.1.4",
+        tag = "v1.1.4",
         notes = """
-            - **Smooth autoplay** - the feed glides one whole screen at a time, always the same way, so nothing jumps up and down mid-play
-            - **Autoplay speed** - Settings > Playback: how long each photo holds the screen, 1 to 15 seconds
-            - **Group similar folders moved to Settings** - Settings > Library, and it matches more names now (Download/Downloads, Bus/Buses, CameraRoll, Camara)
-            - **Trash moved to Settings** - Settings > Library > Trash
+            - **Smooth autoplay** - the feed keeps showing as many photos per screen as before, and the item being played is the one in the middle: each step glides up into the middle in a single movement, with no jump up or down
+            - **Autoplay speed** - Settings > Playback: how long each photo holds the screen, 1 to 15 seconds (a video still plays to its own end)
         """.trimIndent(),
-        apkUrl = "https://github.com/realmjunaid/vgallery/releases/download/v1.1.3/vgallery_v1.1.3-release.apk",
+        apkUrl = "https://github.com/realmjunaid/vgallery/releases/download/v1.1.4/vgallery_v1.1.4-release.apk",
         apkSha256 = "9ccb92f6f87ccdf01f8d7b157d650bf3fb2e9f879f70d254a39b3e8628760f61",
         source = "github"
     )
