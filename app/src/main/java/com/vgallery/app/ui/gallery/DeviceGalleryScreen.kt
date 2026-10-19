@@ -317,10 +317,11 @@ fun DeviceGalleryScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
-        val granted = grants.values.any { it } ||
-            hasDeviceGalleryPermission(context)
-        viewModel.refresh(granted)
+    ) { _ ->
+        // A scan reads images and videos, so it needs both permissions. The result map can carry a
+        // partial grant (Android lets one of the two be denied), and reading that as "allowed"
+        // used to leave the gallery empty with no prompt to explain it. Ask the device instead.
+        viewModel.refresh(hasDeviceGalleryPermission(context))
     }
 
     LaunchedEffect(Unit) {

@@ -63,6 +63,7 @@ class AppPreferences @Inject constructor(
         val TRASHED_MEDIA = stringPreferencesKey("trashed_media")
         val NEW_FOLDERS = stringSetPreferencesKey("new_folders")
         val KNOWN_FOLDERS = stringSetPreferencesKey("known_folders")
+        val ANIMATED_WEBPS = stringSetPreferencesKey("animated_webps")
         val UPDATE_CHECK_ENABLED = booleanPreferencesKey("update_check_enabled")
         val UPDATE_LAST_CHECK = longPreferencesKey("update_last_check")
         val UPDATE_SKIPPED_VERSION = stringPreferencesKey("update_skipped_version")
@@ -116,6 +117,15 @@ class AppPreferences @Inject constructor(
     /** Folder names seen at least once: the baseline for spotting folders added later. */
     val knownFolders: Flow<Set<String>> = data.map { prefs ->
         prefs[Keys.KNOWN_FOLDERS] ?: emptySet()
+    }
+
+    /**
+     * URIs of the WebP files known to animate. MediaStore files an animated WebP as an image, and
+     * only the header sniff tells the truth, so this is remembered: a rescan can then put each one
+     * straight into its own tab instead of moving it from Photos to Videos a second later.
+     */
+    val animatedWebps: Flow<Set<String>> = data.map { prefs ->
+        prefs[Keys.ANIMATED_WEBPS] ?: emptySet()
     }
 
     /** Runs an edit; returns `false` (and changes nothing) if storage fails. */
@@ -312,6 +322,18 @@ class AppPreferences @Inject constructor(
         val flagged = prefs[Keys.NEW_FOLDERS] ?: emptySet()
         if (name in flagged) prefs[Keys.NEW_FOLDERS] = flagged - name
     }
+
+    // ── Animated WebP flags ───────────────────────────────────────────────────────────────
+
+    /**
+     * Records which WebPs animate. Only [presentWebpUris] are kept, so the stored set is bounded
+     * by the WebP files actually on the device: deleted ones drop out on the next scan.
+     */
+    suspend fun updateAnimatedWebps(presentWebpUris: Set<String>, animated: Set<String>): Boolean =
+        safeEdit { prefs ->
+            val known = prefs[Keys.ANIMATED_WEBPS] ?: emptySet()
+            prefs[Keys.ANIMATED_WEBPS] = (known intersect presentWebpUris) + animated
+        }
 }
 
 data class RecentFolderInfo(

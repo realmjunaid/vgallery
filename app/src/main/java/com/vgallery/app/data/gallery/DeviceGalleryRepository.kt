@@ -98,6 +98,11 @@ class DeviceGalleryRepository @Inject constructor(
      * All device photos and videos. Empty when permission is missing —
      * the UI shows the permission prompt instead of crashing.
      * [fresh] rescans MediaStore (first load / pull-to-refresh); otherwise the cache is used.
+     *
+     * A scan never makes the gallery smaller than it has to be: a collection whose query failed
+     * keeps its previous rows ([mergeScan]), and a scan that came back with nothing while rows
+     * were already known is asked once more before it is believed — MediaStore answers mid-scan,
+     * and publishing that would drop folders until the next refresh put them back.
      */
     suspend fun loadAllPhotos(fresh: Boolean = false): List<DevicePhotoRow> = withContext(Dispatchers.IO) {
         if (!hasPermission()) {
@@ -107,14 +112,24 @@ class DeviceGalleryRepository @Inject constructor(
         if (!fresh) {
             cachedPhotos?.let { return@withContext it }
         }
-        val rows = mutableListOf<DevicePhotoRow>()
-        loadImages(rows)
-        loadVideos(rows)
+        val previous = cachedPhotos.orEmpty()
+        var images = loadImages()
+        var videos = loadVideos()
+        if (shouldRetryEmptyScan(images, videos, previous)) {
+            images = loadImages()
+            videos = loadVideos()
+        }
+        val rows = mergeScan(previous, images, videos)
         // Respect the Settings sort order (default A–Z); the queries stay newest-first.
         val sorted = sortDevicePhotos(rows, appPreferences.settings.first().sortOrder)
         // Hide anything sitting in the Trash until it is restored or permanently deleted.
         val trashed = appPreferences.trashedMedia.first().map { it.uri }.toSet()
-        val visible = filterTrashed(sorted, trashed)
+        // Animated WebPs keep the tab a previous scan already found for them, so a refresh does
+        // not shuffle them (and their folders) between Photos and Videos.
+        val visible = applyAnimatedWebpFlags(
+            filterTrashed(sorted, trashed),
+            appPreferences.animatedWebps.first()
+        )
         // A fresh scan also spots folders added since last time (the home green dot).
         refreshFolderMarkers(visible)
         cachedPhotos = visible
@@ -141,7 +156,8 @@ class DeviceGalleryRepository @Inject constructor(
     /** Marks a folder opened, clearing its "new" dot. */
     suspend fun markFolderOpened(name: String): Boolean = appPreferences.clearNewFolder(name)
 
-    private fun loadImages(rows: MutableList<DevicePhotoRow>) {
+    private fun loadImages(): ScanPart {
+        val rows = mutableListOf<DevicePhotoRow>()
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
@@ -155,6 +171,7 @@ class DeviceGalleryRepository @Inject constructor(
             MediaStore.Images.Media.HEIGHT
         )
         val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
+        var ok = false
         try {
             context.contentResolver.query(collection, projection, null, null, sortOrder)?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
@@ -185,15 +202,18 @@ class DeviceGalleryRepository @Inject constructor(
                         )
                     )
                 }
+                ok = true
             }
         } catch (_: SecurityException) {
-            return
+            // Denied or half-read: a failed query, never "this kind of media does not exist".
         } catch (_: Exception) {
-            return
+            // Same: the previous rows for this kind are kept instead of losing their folders.
         }
+        return ScanPart(rows, ok)
     }
 
-    private fun loadVideos(rows: MutableList<DevicePhotoRow>) {
+    private fun loadVideos(): ScanPart {
+        val rows = mutableListOf<DevicePhotoRow>()
         val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
             MediaStore.Video.Media._ID,
@@ -208,6 +228,7 @@ class DeviceGalleryRepository @Inject constructor(
             MediaStore.Video.Media.HEIGHT
         )
         val sortOrder = "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
+        var ok = false
         try {
             context.contentResolver.query(collection, projection, null, null, sortOrder)?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
@@ -231,7 +252,10 @@ class DeviceGalleryRepository @Inject constructor(
                             bucketName = cursor.getString(bucketCol)?.takeIf { it.isNotBlank() } ?: "Unknown",
                             dateModified = cursor.getLong(dateCol),
                             size = try { cursor.getLong(sizeCol) } catch (_: Exception) { 0L },
-                            mimeType = cursor.getString(mimeCol) ?: "video/*",
+                            // These rows came out of the video table, so they are videos whatever
+                            // the stored MIME says: a missing or wrong MIME used to file one under
+                            // Photos, which left its folder missing from the Videos tab.
+                            mimeType = cursor.getString(mimeCol)?.takeIf { it.startsWith("video/") } ?: "video/*",
                             durationMs = try { cursor.getLong(durationCol) } catch (_: Exception) { 0L },
                             width = if (widthCol >= 0) try { cursor.getInt(widthCol) } catch (_: Exception) { 0 } else 0,
                             height = if (heightCol >= 0) try { cursor.getInt(heightCol) } catch (_: Exception) { 0 } else 0,
@@ -239,12 +263,14 @@ class DeviceGalleryRepository @Inject constructor(
                         )
                     )
                 }
+                ok = true
             }
         } catch (_: SecurityException) {
-            return
+            // Denied or half-read: a failed query, never "this kind of media does not exist".
         } catch (_: Exception) {
-            return
+            // Same: the previous rows for this kind are kept instead of losing their folders.
         }
+        return ScanPart(rows, ok)
     }
 
     /** Reads the first bytes of a WebP file and checks the VP8X animation flag. */
@@ -488,17 +514,24 @@ class DeviceGalleryRepository @Inject constructor(
     /**
      * Fills in animated-WebP flags after the first paint: opening one stream per
      * WebP is slow, so it never blocks the initial scan. Returns new row copies.
+     *
+     * What it finds is remembered ([AppPreferences.updateAnimatedWebps]), so the next scan starts
+     * with those files already in the Videos tab instead of showing them under Photos first.
      */
     suspend fun sniffAnimatedWebps(rows: List<DevicePhotoRow>): List<DevicePhotoRow> =
         withContext(Dispatchers.IO) {
             if (rows.none { it.mimeType == "image/webp" && !it.isAnimatedWebp }) return@withContext rows
+            val animated = mutableSetOf<String>()
             val refreshed = rows.map { row ->
                 if (row.mimeType == "image/webp" && !row.isAnimatedWebp && isAnimatedWebpUri(row.uri)) {
+                    animated += row.uri.toString()
                     row.copy(isAnimatedWebp = true)
                 } else {
                     row
                 }
             }
+            if (animated.isEmpty()) return@withContext rows
+            appPreferences.updateAnimatedWebps(webpUris(rows), animated)
             // Keep the cache in sync so album switches stay instant AND flagged.
             cachedPhotos?.let { cached ->
                 if (cached.size == refreshed.size) cachedPhotos = refreshed

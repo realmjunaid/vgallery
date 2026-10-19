@@ -92,7 +92,9 @@ class DeviceGalleryViewModel @Inject constructor(
                 state.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    hasPermission = true,
+                    // A scan that found nothing because access was revoked must show the prompt,
+                    // not an empty gallery.
+                    hasPermission = repository.hasPermission(),
                     newFolders = newFolders
                 ),
                 rows
@@ -103,7 +105,13 @@ class DeviceGalleryViewModel @Inject constructor(
     }
 
     private suspend fun refreshAnimatedFlags() {
-        val refreshed = repository.sniffAnimatedWebps(repository.cachedSnapshot())
+        // An empty cache means the scan did not publish (permission just went away, or a delete
+        // reset it): deriving the gallery from it would blank every folder for a frame.
+        val snapshot = repository.cachedSnapshot()
+        if (snapshot.isEmpty()) return
+        val refreshed = repository.sniffAnimatedWebps(snapshot)
+        // Nothing new to flag: keep the state as it is instead of deriving an identical one.
+        if (refreshed === snapshot) return
         _uiState.update { derive(it, refreshed) }
     }
 
