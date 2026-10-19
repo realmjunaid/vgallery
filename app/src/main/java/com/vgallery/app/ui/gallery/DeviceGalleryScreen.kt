@@ -87,6 +87,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -361,6 +362,18 @@ fun DeviceGalleryScreen(
                     onClear = {
                         selectedFolders = emptySet()
                         selectedPhotoIds = emptySet()
+                    },
+                    onSelectAll = {
+                        if (selectedFolders.isNotEmpty()) {
+                            val allNames = if (homeQuery.isBlank()) {
+                                uiState.albums.map { it.name }
+                            } else {
+                                filterAlbumsByName(uiState.albums, homeQuery).map { it.name }
+                            }
+                            selectedFolders = allNames.toSet()
+                        } else {
+                            selectedPhotoIds = visiblePhotos.map { it.id }.toSet()
+                        }
                     }
                 )
             } else {
@@ -2069,6 +2082,7 @@ private fun MoveFolderDialog(
     onPick: (DeviceFolderTarget) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var query by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = SurfaceVariant,
@@ -2096,28 +2110,51 @@ private fun MoveFolderDialog(
                 }
                 targets.isEmpty() -> Text("No folders found on this device.", color = TextSecondary)
                 else -> {
-                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
-                        items(targets, key = { it.relativePath }) { target ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onPick(target) }
-                                    .padding(vertical = 12.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Filled.Folder, contentDescription = null, tint = Violet400)
-                                Column(modifier = Modifier.padding(start = 12.dp)) {
-                                    Text(
-                                        text = target.displayName,
-                                        color = TextPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = if (target.count == 1) "1 item" else "${target.count} items",
-                                        color = TextMuted,
-                                        fontSize = 12.sp
-                                    )
+                    val filtered = if (query.isBlank()) targets
+                    else targets.filter { it.displayName.contains(query.trim(), ignoreCase = true) }
+                    Column {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text("Search folders", color = TextMuted) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Violet400,
+                                unfocusedBorderColor = SurfaceElevated,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                cursorColor = Violet400
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (filtered.isEmpty()) {
+                            Text("No folders match \"${query.trim()}\".", color = TextSecondary)
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                                items(filtered, key = { it.relativePath }) { target ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onPick(target) }
+                                            .padding(vertical = 12.dp, horizontal = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Filled.Folder, contentDescription = null, tint = Violet400)
+                                        Column(modifier = Modifier.padding(start = 12.dp)) {
+                                            Text(
+                                                text = target.displayName,
+                                                color = TextPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = if (target.count == 1) "1 item" else "${target.count} items",
+                                                color = TextMuted,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2182,7 +2219,8 @@ internal fun SelectionBar(
     onMove: () -> Unit,
     onInfo: () -> Unit,
     onDelete: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onSelectAll: () -> Unit = {}
 ) {
     TopAppBar(
         title = {
@@ -2205,6 +2243,9 @@ internal fun SelectionBar(
             }
         },
         actions = {
+            TextButton(onClick = onSelectAll) {
+                Text("All", color = TextPrimary, fontWeight = FontWeight.SemiBold)
+            }
             IconButton(onClick = onMove) {
                 Icon(Icons.Filled.Folder, contentDescription = "Move", tint = TextPrimary)
             }

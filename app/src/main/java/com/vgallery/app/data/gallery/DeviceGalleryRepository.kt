@@ -496,7 +496,15 @@ class DeviceGalleryRepository @Inject constructor(
                             )
                         }
                     } catch (_: SecurityException) {
-                        return@withContext MoveResult.Failed("Permission denied")
+                        // Some OEMs throw a plain SecurityException instead of a RecoverableSecurityException
+                        // for media the app doesn't own. On Android 11+ we can still build a write request
+                        // for those, so treat them as recoverable there; on older releases there is no
+                        // fallback and the move genuinely can't be done.
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            survivors += uri
+                        } else {
+                            return@withContext MoveResult.Failed("Permission denied")
+                        }
                     }
                 }
                 if (survivors.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
