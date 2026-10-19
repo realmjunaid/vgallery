@@ -397,7 +397,7 @@ class GalleryScreenshotsTest {
             - **Autoplay speed** - Settings > Playback: how long each photo holds the screen, 1 to 15 seconds (a video still plays to its own end)
         """.trimIndent(),
         apkUrl = "https://github.com/realmjunaid/vgallery/releases/download/v1.1.4/vgallery_v1.1.4-release.apk",
-        apkSha256 = "9ccb92f6f87ccdf01f8d7b157d650bf3fb2e9f879f70d254a39b3e8628760f61",
+        apkSha256 = "3522f2723e1eda6278cbe93c142c9f4614ee8ee69621b1c6b69eeabff6ff15c5",
         source = "github"
     )
 }
