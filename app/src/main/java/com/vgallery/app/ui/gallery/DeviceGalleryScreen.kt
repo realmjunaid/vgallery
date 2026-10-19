@@ -1543,80 +1543,18 @@ private fun DevicePhotoViewer(
     Scaffold(
         containerColor = Color.Black,
         topBar = {
-            AnimatedVisibility(
+            ViewerTopBar(
                 visible = uiVisible,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = title.ifBlank { "Photos" },
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "${photos.size} photos • scroll vertically",
-                                color = Color.Gray,
-                                fontSize = 12.sp,
-                                maxLines = 1
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Close",
-                                tint = Color.White
-                            )
-                        }
-                    },
-                    actions = {
-                        // Autoplay sits with the per-item actions. It is the one that looks
-                        // different while it is on — pause bar in the accent colour — so a feed
-                        // that is walking itself is never a mystery.
-                        if (photos.isNotEmpty()) {
-                            IconButton(onClick = { toggleAutoPlay() }) {
-                                Icon(
-                                    imageVector = if (autoPlay) Icons.Filled.Pause
-                                    else Icons.Filled.PlayArrow,
-                                    contentDescription = if (autoPlay) "Stop autoplay" else "Autoplay",
-                                    tint = if (autoPlay) Violet400 else Color.White
-                                )
-                            }
-                        }
-                        photos.getOrNull(currentIndex)?.let { current ->
-                            IconButton(onClick = { sharePhotos(context, listOf(current)) }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Share,
-                                    contentDescription = "Share",
-                                    tint = Color.White
-                                )
-                            }
-                            IconButton(onClick = { infoPhoto = current }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Info,
-                                    contentDescription = "Details",
-                                    tint = Color.White
-                                )
-                            }
-                            IconButton(onClick = { confirmDelete(current) }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Delete,
-                                    contentDescription = "Delete",
-                                    tint = Color.White
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black.copy(alpha = 0.6f))
-                )
-            }
+                title = title,
+                photoCount = photos.size,
+                current = photos.getOrNull(currentIndex),
+                autoPlay = autoPlay,
+                onDismiss = onDismiss,
+                onToggleAutoPlay = { toggleAutoPlay() },
+                onShare = { sharePhotos(context, listOf(it)) },
+                onInfo = { infoPhoto = it },
+                onDelete = { confirmDelete(it) }
+            )
         }
     ) { padding ->
         Box(
@@ -1810,21 +1748,10 @@ private fun DevicePhotoViewer(
             }
             // Small side counter, plain text, no background — e.g. 23/100.
             if (photos.isNotEmpty()) {
-                Text(
-                    text = "${(currentIndex + 1).coerceAtMost(photos.size)} / ${photos.size}",
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.8f),
-                            offset = Offset(1f, 1f),
-                            blurRadius = 3f
-                        )
-                    ),
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 6.dp)
+                ViewerCounter(
+                    currentIndex = currentIndex,
+                    total = photos.size,
+                    modifier = Modifier.align(Alignment.CenterEnd)
                 )
             }
             // The current item's name, bottom centre; it fades with the chrome.
@@ -1835,21 +1762,7 @@ private fun DevicePhotoViewer(
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 photos.getOrNull(currentIndex)?.let { current ->
-                    Text(
-                        text = current.name,
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            shadow = Shadow(
-                                color = Color.Black.copy(alpha = 0.8f),
-                                offset = Offset(1f, 1f),
-                                blurRadius = 3f
-                            )
-                        ),
-                        modifier = Modifier.padding(horizontal = 56.dp, vertical = 12.dp)
-                    )
+                    ViewerCaption(name = current.name)
                 }
             }
         }
@@ -1874,6 +1787,135 @@ private fun DevicePhotoViewer(
         }
     }
 }
+
+/**
+ * The full-view feed's chrome, in the three pieces that fade in and out as one: the bar over
+ * the photos, the `23 / 100` marker and the item name at the bottom. They live side by side so
+ * the feed and the README screenshots draw the same chrome instead of a hand-copied lookalike.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ViewerTopBar(
+    visible: Boolean,
+    title: String,
+    photoCount: Int,
+    current: DevicePhotoRow?,
+    autoPlay: Boolean,
+    onDismiss: () -> Unit,
+    onToggleAutoPlay: () -> Unit,
+    onShare: (DevicePhotoRow) -> Unit,
+    onInfo: (DevicePhotoRow) -> Unit,
+    onDelete: (DevicePhotoRow) -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        TopAppBar(
+            title = {
+                Column {
+                    Text(
+                        text = title.ifBlank { "Photos" },
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "$photoCount photos • scroll vertically",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        maxLines = 1
+                    )
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Close",
+                        tint = Color.White
+                    )
+                }
+            },
+            actions = {
+                // Autoplay sits with the per-item actions. It is the one that looks
+                // different while it is on — pause bar in the accent colour — so a feed
+                // that is walking itself is never a mystery.
+                if (photoCount > 0) {
+                    IconButton(onClick = onToggleAutoPlay) {
+                        Icon(
+                            imageVector = if (autoPlay) Icons.Filled.Pause
+                            else Icons.Filled.PlayArrow,
+                            contentDescription = if (autoPlay) "Stop autoplay" else "Autoplay",
+                            tint = if (autoPlay) Violet400 else Color.White
+                        )
+                    }
+                }
+                current?.let { current ->
+                    IconButton(onClick = { onShare(current) }) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "Share",
+                            tint = Color.White
+                        )
+                    }
+                    IconButton(onClick = { onInfo(current) }) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = "Details",
+                            tint = Color.White
+                        )
+                    }
+                    IconButton(onClick = { onDelete(current) }) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = "Delete",
+                            tint = Color.White
+                        )
+                    }
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black.copy(alpha = 0.6f))
+        )
+    }
+}
+
+/** The feed's `23 / 100` marker: plain text, no background, readable over any photo. */
+@Composable
+internal fun ViewerCounter(currentIndex: Int, total: Int, modifier: Modifier = Modifier) {
+    Text(
+        text = "${(currentIndex + 1).coerceAtMost(total)} / $total",
+        color = Color.White.copy(alpha = 0.9f),
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Medium,
+        style = MaterialTheme.typography.labelSmall.copy(shadow = VIEWER_TEXT_SHADOW),
+        modifier = modifier.padding(end = 6.dp)
+    )
+}
+
+/** The name of the item on screen, bottom centre. */
+@Composable
+internal fun ViewerCaption(name: String, modifier: Modifier = Modifier) {
+    Text(
+        text = name,
+        color = Color.White.copy(alpha = 0.85f),
+        fontSize = 11.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        style = MaterialTheme.typography.labelSmall.copy(shadow = VIEWER_TEXT_SHADOW),
+        modifier = modifier.padding(horizontal = 56.dp, vertical = 12.dp)
+    )
+}
+
+/** A dark drop shadow, so the white feed chrome stays readable over a bright photo. */
+private val VIEWER_TEXT_SHADOW = Shadow(
+    color = Color.Black.copy(alpha = 0.8f),
+    offset = Offset(1f, 1f),
+    blurRadius = 3f
+)
 
 /** System share sheet for one or many photos/videos. */
 internal fun sharePhotos(context: android.content.Context, photos: List<DevicePhotoRow>) {

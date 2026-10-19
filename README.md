@@ -17,6 +17,33 @@
   <img src="https://img.shields.io/badge/Updates-Built--in-7C3AED" alt="Built-in updates">
 </p>
 
+## 📱 Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/home-dark.png" width="220" alt="Home: every folder, newest first, on pure-black AMOLED">
+  <img src="docs/screenshots/feed-dark.png" width="220" alt="Full view: one photo after another, full screen">
+  <img src="docs/screenshots/grid-dark.png" width="220" alt="A folder as a thumbnail grid, with multi-select">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/home-light.png" width="220" alt="Home in the light theme">
+  <img src="docs/screenshots/videos-light.png" width="220" alt="The Videos tab, in the violet accent">
+  <img src="docs/screenshots/list-light.png" width="220" alt="A folder as a list, with each file's title and size">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/settings-dark.png" width="220" alt="Settings: theme, accent, pure black, updates">
+  <img src="docs/screenshots/settings-light.png" width="220" alt="Settings in the light theme">
+  <img src="docs/screenshots/update-dark.png" width="220" alt="The built-in update prompt">
+</p>
+
+<p align="center"><sub>
+Drawn from VGallery's own Compose screens by <code>GalleryScreenshotsTest</code>
+(<code>./gradlew :app:testDebugUnitTest --tests "com.vgallery.app.GalleryScreenshotsTest"</code>),
+so these are the real layouts and themes, not mock-ups. The photos in them are generated
+demo images — a device-less test has no camera roll.
+</sub></p>
+
 ## ✨ Features
 
 - **Reels-style vertical scrolling** ⭐ — the heart of VGallery. Swipe up through your photos full-screen, one flowing feed, exactly like Reels. No other gallery app does this.
