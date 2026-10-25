@@ -1,0 +1,37 @@
+[package]
+name = "vgallery"
+version = "0.1.0"
+description = "VGallery for Windows - your photo library, scrolled like reels."
+authors = ["M Junaid"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "vgallery_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+dirs = "6"
+image = { version = "0.25", default-features = false, features = [
+  "jpeg",
+  "png",
+  "webp",
+  "gif",
+  "bmp",
+  "tiff",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

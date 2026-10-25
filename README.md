@@ -81,6 +81,29 @@ demo images — a device-less test has no camera roll.
 > From 1.0.9 on you can skip this page: VGallery installs its own updates. It offers a new version
 > when one is out, downloads it, verifies it and hands it to Android's installer.
 
+## 🖥 VGallery for Windows
+
+There is a desktop build too, in [`windows/`](windows/) — the same idea rebuilt in **Rust + Tauri**
+instead of Kotlin, so it stays light: one native binary with a WebView2 UI, no JVM, ~4–6 MB installer.
+
+It keeps the concept: folder-wise auto gallery, **Photos/Videos** tabs, grid/list, group-similar-folders,
+the reels-style scroll-snapped feed with autoplay, Trash with restore, and System/Dark/Light themes with
+an accent and pure-black AMOLED option. The full-screen feed is black in every theme, same as Android.
+The player also handles **subtitles and extra audio tracks** from sidecar files next to the video
+(`movie.bn.srt`, `movie.en.forced.srt`, `movie.bn.m4a`) — with a track picker, per-video memory, and
+`T` / `C` shortcuts. The feed scrolls smoothly with the wheel instead of jumping a screen per notch,
+and it uses the same logo as the Android app.
+
+```powershell
+cd windows
+npm install
+npm run app:dev      # dev window with hot reload
+npm run app:build    # release .exe + NSIS installer + MSI
+```
+
+Requirements: Windows 10/11 with WebView2, Rust (MSVC toolchain) and Node.js 20+. Details, data
+locations and the current gaps are in [`windows/README.md`](windows/README.md).
+
 ## 🔒 Privacy
 
 - No account, no analytics, no ads, no crash reporting.
