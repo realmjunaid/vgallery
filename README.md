@@ -45,7 +45,7 @@ VGallery is a free, **offline-first** photo & video gallery for **Android** and 
 
 Or go to Releases → look for "VGallery for Windows 0.1.0"
 
-> **Note:** Windows support is currently at version **0.1.0** (preview). The experience matches the Android app closely, including the continuous feed and global zoom.
+> **Note:** Windows is at version **0.1.0**. The experience matches the Android app closely, including the continuous feed and global zoom.
 
 If no Windows installer is attached yet, build it yourself (see below).
 

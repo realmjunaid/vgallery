@@ -4,7 +4,7 @@
 [VGallery](../README.md), written in **Rust + Tauri** instead of Kotlin. Same idea, same
 black-and-violet look, much smaller footprint than a JVM app.
 
-> Status: **0.1.0 preview.** The gallery, folder grouping, grid/list, full-screen feed,
+> Status: **0.1.0.** The gallery, folder grouping, grid/list, full-screen feed,
 > autoplay, Trash and Settings are in. Native OS integration is intentionally small.
 
 ## Why Rust + Tauri?
