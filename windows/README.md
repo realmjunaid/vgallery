@@ -23,9 +23,10 @@ plain `std::fs`, and the UI is vanilla TypeScript — no React, no UI framework 
 
 - **Auto gallery** — point it at folders (Pictures, Videos, Desktop and Downloads on first
   run) and every photo and video shows up grouped folder-wise. Nothing to import.
-- **Continuous photo feed** — the feed is a strip, not a pager: every picture keeps its own
-  shape and up to two fit on screen, so a small wheel nudge reveals the next one instead
-  of replacing the screen. Videos show a poster frame and play when you tap them.
+- **Continuous photo feed** — the feed is a strip, not a pager: every picture sits in the
+  same card, so a portrait and a square take the same space on screen (the extra is cropped
+  from the centre). A small wheel nudge reveals the next one instead of replacing the screen.
+  Videos show a poster frame and play when you tap them.
   Pinch (or `Ctrl` + wheel) zooms the **whole feed** from 1× to 10×, Google Drive
   PDF-viewer style: every item grows together, double-click toggles 2×, a sideways drag
   pans, and the feed keeps scrolling up and down at any zoom.

@@ -2196,8 +2196,8 @@ video.feed-media::cue {
   padding: 56px 0 92px;
 }
 
-/* A continuous strip: every item keeps the size of its picture, so several
-   can share the screen and the next one peeks in while you scroll. */
+/* A continuous strip of equal cards. Ratio stays inside the card; the card
+   itself does not grow or shrink, so the next one still peeks in. */
 .feed-item {
   position: relative;
   flex: none;
@@ -2222,7 +2222,10 @@ video.feed-media::cue {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  /* Fill the shared card. Portrait, square and panorama all occupy the same
+     screen area; the extra is cropped from the centre, never letterboxed. */
+  object-fit: cover;
+  object-position: center center;
   transform-origin: center center;
   user-select: none;
   -webkit-user-drag: none;

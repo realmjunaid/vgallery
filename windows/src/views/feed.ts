@@ -7,7 +7,6 @@ import {
   type VideoTracks,
 } from "../lib/api";
 import { h, hasOverlay, iconButton, openSheet, toast } from "../lib/dom";
-import { formatBytes, kindLabel } from "../lib/format";
 import { icon } from "../lib/icons";
 
 export interface FeedOptions {
@@ -65,7 +64,6 @@ export function openFeed(options: FeedOptions): FeedHandle {
   let index = start;
   let autoplayOn = options.initialAutoplay ?? false;
   let timer = 0;
-  let captionTimer = 0;
   let hintTimer = 0;
   let scrollTimer = 0;
   let destroyed = false;
@@ -93,13 +91,6 @@ export function openFeed(options: FeedOptions): FeedHandle {
   tracksButton.classList.add("hidden");
   const infoButton = iconButton("info", "Details", () =>
     options.onInfo(items[index]),
-  );
-
-  const caption = h(
-    "div",
-    { class: "feed-caption" },
-    h("strong", {}, items[start]?.name ?? ""),
-    h("span", {}, `${formatBytes(items[start]?.size ?? 0)} · ${kindLabel(items[start]?.kind ?? "image")}`),
   );
 
   const track = h("div", { class: "feed-track" });
@@ -141,7 +132,6 @@ export function openFeed(options: FeedOptions): FeedHandle {
     h("div", { class: "feed-progress" }, progressBar),
     topbar,
     feed,
-    caption,
   );
 
   document.body.classList.add("feed-open");
@@ -150,34 +140,28 @@ export function openFeed(options: FeedOptions): FeedHandle {
 
   // --- layout ------------------------------------------------------------
   //
-  // Every item gets its box before the picture loads, so scrolling never
-  // jumps when images arrive. Pictures keep their own shape: a tall photo
-  // gets a tall box, a panorama a short one, and small screenshots stay small.
+  // Every item gets the same card, before the picture loads, so a portrait and
+  // a square never come out bigger or smaller than each other. The photo keeps
+  // its own ratio inside that card (cover, centred) instead of resizing the card.
 
-  const MAX_MEDIA_HEIGHT = 0.48;
-  const SIDE_INSET = 36;
-  const MAX_MEDIA_WIDTH = 1280;
+  const SIDE_INSET = 72;
+
+  /** One box for the whole feed. Ratio of the file does not change it. */
+  function mediaBox(): { width: number; height: number } {
+    const availableWidth = Math.max(280, feed.clientWidth - SIDE_INSET);
+    const availableHeight = Math.max(280, feed.clientHeight);
+    // Tall enough that the next card still peeks in, short of filling the window.
+    const height = Math.round(Math.min(availableHeight * 0.58, 680));
+    const width = Math.round(Math.min(availableWidth, height * 0.82, 560));
+    return { width: Math.max(240, width), height: Math.max(280, height) };
+  }
 
   function sizeFrame(i: number): void {
     const frame = frames[i];
-    const item = items[i];
-    if (!frame || !item) return;
-    const availableWidth = Math.max(160, feed.clientWidth - SIDE_INSET);
-    const availableHeight = Math.max(160, feed.clientHeight);
-    const limitW = Math.min(availableWidth, MAX_MEDIA_WIDTH);
-    const limitH = availableHeight * MAX_MEDIA_HEIGHT;
-    let ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 16 / 9;
-    if (!Number.isFinite(ratio) || ratio <= 0) ratio = 16 / 9;
-    let width = Math.min(limitW, limitH * ratio);
-    // Never blow a small file up past its real pixels.
-    if (item.width > 0) width = Math.min(width, item.width);
-    let height = width / ratio;
-    if (height < 72) {
-      height = 72;
-      width = height * ratio;
-    }
-    frame.style.width = `${Math.round(width)}px`;
-    frame.style.height = `${Math.round(height)}px`;
+    if (!frame) return;
+    const box = mediaBox();
+    frame.style.width = `${box.width}px`;
+    frame.style.height = `${box.height}px`;
   }
 
   function sizeAllFrames(): void {
@@ -1191,13 +1175,6 @@ export function openFeed(options: FeedOptions): FeedHandle {
     window.clearTimeout(timer);
     resetProgress();
     counter.textContent = `${index + 1} / ${items.length}`;
-    caption.replaceChildren(
-      h("strong", {}, items[index].name),
-      h("span", {}, `${formatBytes(items[index].size)} · ${kindLabel(items[index].kind)}`),
-    );
-    caption.classList.add("show");
-    window.clearTimeout(captionTimer);
-    captionTimer = window.setTimeout(() => caption.classList.remove("show"), 2600);
     const previousVideo = videoAt(previous);
     previousVideo?.pause();
     ensureMedia(index);
@@ -1304,8 +1281,6 @@ export function openFeed(options: FeedOptions): FeedHandle {
   };
   window.addEventListener("resize", onResize);
 
-  caption.classList.add("show");
-  captionTimer = window.setTimeout(() => caption.classList.remove("show"), 2800);
   hintTimer = window.setTimeout(() => zoomHint.classList.add("hidden"), 7000);
   updateAutoplayButton();
   updateTracksButton();
@@ -1321,7 +1296,6 @@ export function openFeed(options: FeedOptions): FeedHandle {
     if (destroyed) return;
     destroyed = true;
     window.clearTimeout(timer);
-    window.clearTimeout(captionTimer);
     window.clearTimeout(hintTimer);
     window.clearTimeout(scrollTimer);
     window.clearTimeout(cleanupTimer);
