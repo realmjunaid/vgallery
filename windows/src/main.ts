@@ -423,15 +423,7 @@ function folderCard(folder: FolderEntry, tab: Tab): HTMLElement {
     coverWrap.classList.add("is-fallback");
   }
 
-  const badgeText = `${stats.count} ${plural(stats.count, tab === "photos" ? "photo" : "video")}`;
-
-  const coverBits: (Node | string)[] = [
-    h("div", { class: "cover-shade" }),
-    h("span", { class: "folder-count" }, badgeText),
-    h("span", { class: "folder-size" }, formatBytes(stats.size)),
-  ];
-  if (isNew) coverBits.push(h("span", { class: "new-dot", title: "New folder" }));
-  coverWrap.append(...coverBits);
+  if (isNew) coverWrap.append(h("span", { class: "new-dot", title: "New folder" }));
 
   if (cover?.kind === "video") {
     coverWrap.append(h("span", { class: "cover-play" }, icon("play", 18)));
