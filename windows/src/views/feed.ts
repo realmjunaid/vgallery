@@ -22,6 +22,8 @@ export interface FeedOptions {
 
 export interface FeedHandle {
   destroy: () => void;
+  /** The item currently in the middle of the feed. */
+  index: () => number;
 }
 
 const MOTION_MS = 5_000;
@@ -1418,5 +1420,5 @@ export function openFeed(options: FeedOptions): FeedHandle {
     options.onClose();
   }
 
-  return { destroy };
+  return { destroy, index: () => index };
 }

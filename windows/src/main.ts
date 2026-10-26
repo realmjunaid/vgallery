@@ -54,6 +54,19 @@ let feedHandle: FeedHandle | null = null;
 let seenFolders = loadSeen();
 const scrollMemory = new Map<string, number>();
 
+type NavPlace =
+  | { name: "home"; tab: Tab }
+  | { name: "folder"; path: string; tab: Tab }
+  | { name: "settings" }
+  | { name: "trash" }
+  | { name: "feed" };
+
+let navIndex = 0;
+let navSilent = false;
+let suppressFeedHistory = false;
+const navStack: NavPlace[] = [{ name: "home", tab: "photos" }];
+let feedSession: { items: MediaItem[]; index: number; title: string } | null = null;
+
 const SEEN_KEY = "vgallery.seen.v1";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +81,109 @@ function loadSeen(): Set<string> {
     /* ignore a broken value */
   }
   return new Set();
+}
+
+function samePlace(left: NavPlace | undefined, right: NavPlace): boolean {
+  if (!left || left.name !== right.name) return false;
+  if (left.name === "home" && right.name === "home") return left.tab === right.tab;
+  if (left.name === "folder" && right.name === "folder") return left.path === right.path && left.tab === right.tab;
+  return true;
+}
+
+function currentPlace(): NavPlace {
+  if (feedHandle) return { name: "feed" };
+  if (state.name === "folder") return { name: "folder", path: state.folder.path, tab: homeTab };
+  if (state.name === "settings") return { name: "settings" };
+  if (state.name === "trash") return { name: "trash" };
+  return { name: "home", tab: homeTab };
+}
+
+function pushNav(place: NavPlace): void {
+  if (navSilent) return;
+  if (samePlace(navStack[navIndex], place)) {
+    navStack[navIndex] = place;
+    history.replaceState({ i: navIndex }, "");
+    return;
+  }
+  navStack.splice(navIndex + 1);
+  navStack.push(place);
+  navIndex += 1;
+  history.pushState({ i: navIndex }, "");
+}
+
+function replaceNav(place: NavPlace): void {
+  navStack.splice(0, navStack.length, place);
+  navIndex = 0;
+  history.replaceState({ i: 0 }, "");
+}
+
+/** Close a sheet or confirm dialog. Mouse back should dismiss that before leaving the page. */
+function closeTopOverlay(): boolean {
+  const layers = document.querySelectorAll(".modal-backdrop");
+  const top = layers[layers.length - 1];
+  if (!top) return false;
+  const sheetClose = top.querySelector<HTMLButtonElement>(".sheet-head .icon-btn");
+  if (sheetClose) {
+    sheetClose.click();
+    return true;
+  }
+  const cancel = top.querySelector<HTMLButtonElement>(".dialog-actions .btn-ghost");
+  if (cancel) {
+    cancel.click();
+    return true;
+  }
+  return false;
+}
+
+function applyPlace(place: NavPlace | undefined): void {
+  const target = place ?? { name: "home" as const, tab: homeTab };
+  navSilent = true;
+  try {
+    if (feedHandle && target.name !== "feed") {
+      suppressFeedHistory = true;
+      feedHandle.destroy();
+      suppressFeedHistory = false;
+      feedHandle = null;
+    }
+    if (target.name === "feed") {
+      if (!feedHandle && feedSession) openViewer(feedSession.items, feedSession.index, feedSession.title);
+      return;
+    }
+    selected = new Set();
+    if (target.name === "folder") {
+      homeTab = target.tab;
+      const folder = folderByPath(target.path);
+      if (!folder) {
+        state = { name: "home" };
+      } else {
+        state = { name: "folder", folder: { ...folder, items: itemsForTab(folder, homeTab) } };
+      }
+    } else if (target.name === "settings") {
+      state = { name: "settings" };
+    } else if (target.name === "trash") {
+      state = { name: "trash" };
+    } else {
+      homeTab = target.tab;
+      state = { name: "home" };
+    }
+    render();
+  } finally {
+    navSilent = false;
+  }
+}
+
+function goBack(): void {
+  if (closeTopOverlay()) return;
+  if (feedHandle) {
+    feedHandle.destroy();
+    return;
+  }
+  if (navIndex > 0) history.back();
+  else goHome();
+}
+
+function goForward(): void {
+  if (navIndex < navStack.length - 1) history.forward();
 }
 
 function saveSeen(): void {
@@ -228,13 +344,6 @@ function brand(): HTMLElement {
   return h(
     "div",
     { class: "brand" },
-    h("img", {
-      class: "brand-mark",
-      src: "/app-icon.png",
-      alt: "",
-      width: "36",
-      height: "36",
-    }),
     h("div", { class: "brand-copy" }, h("h1", {}, "VGallery"), h("p", {}, "for Windows")),
   );
 }
@@ -256,6 +365,8 @@ function renderHome(): void {
           homeTab = name;
           homeQuery = "";
           scrollMemory.delete(`home:${homeTab}`);
+          navStack[navIndex] = { name: "home", tab: homeTab };
+          history.replaceState({ i: navIndex }, "");
           render();
         },
       },
@@ -291,6 +402,7 @@ function renderHome(): void {
     }),
     iconButton("settings", "Settings", () => {
       state = { name: "settings" };
+      pushNav({ name: "settings" });
       render();
     }),
   );
@@ -464,6 +576,7 @@ function openFolder(folder: FolderEntry, tab: Tab): void {
   }
   selected = new Set();
   state = { name: "folder", folder: { ...folder, items } };
+  pushNav({ name: "folder", path: folder.path, tab });
   render();
 }
 
@@ -523,7 +636,7 @@ function emptyLibrary(tab: Tab): HTMLElement {
             otherTab === "photos" ? "Open Photos" : "Open Videos",
           )
         : h("button", { class: "btn btn-primary", type: "button", onclick: () => void pickFolder() }, icon("plus", 17), "Add folder"),
-      h("button", { class: "btn btn-ghost", type: "button", onclick: () => { state = { name: "settings" }; render(); } }, icon("settings", 16), "Settings"),
+      h("button", { class: "btn btn-ghost", type: "button", onclick: () => { state = { name: "settings" }; pushNav({ name: "settings" }); render(); } }, icon("settings", 16), "Settings"),
     ),
   );
 }
@@ -601,7 +714,7 @@ function renderFolder(): void {
   const head = h(
     "header",
     { class: "folder-head" },
-    iconButton("back", "Back to library", () => goHome()),
+    iconButton("back", "Back to library", () => goBack()),
     h(
       "div",
       { class: "folder-heading" },
@@ -632,7 +745,7 @@ function renderFolder(): void {
         h(
           "div",
           { class: "inline-actions" },
-          h("button", { class: "btn btn-ghost", type: "button", onclick: () => goHome() }, icon("back", 16), "Back to library"),
+          h("button", { class: "btn btn-ghost", type: "button", onclick: () => goBack() }, icon("back", 16), "Back to library"),
         ),
       ),
     );
@@ -1022,11 +1135,18 @@ function openViewer(items: MediaItem[], startIndex: number, title: string): void
     title,
     autoplaySeconds: settings.autoplaySeconds,
     onClose: () => {
+      if (feedHandle && feedSession) feedSession = { ...feedSession, index: feedHandle.index() };
       feedHandle = null;
+      if (suppressFeedHistory || navSilent) return;
+      if ((history.state as { i?: number } | null)?.i === navIndex && navStack[navIndex]?.name === "feed") {
+        history.back();
+      }
     },
     onInfo: (item) => showDetails([item]),
     onOpen: (item) => openFile(item.path),
   });
+  feedSession = { items, index: startIndex, title };
+  pushNav({ name: "feed" });
 }
 
 /**
@@ -1047,7 +1167,9 @@ async function openFromOs(path: string): Promise<void> {
       items.findIndex((item) => item.path.toLowerCase() === wanted),
     );
     if (feedHandle) {
+      suppressFeedHistory = true;
       feedHandle.destroy();
+      suppressFeedHistory = false;
       feedHandle = null;
       await new Promise((resolve) => setTimeout(resolve, 180));
     }
@@ -1076,7 +1198,7 @@ async function renderSettingsPage(): Promise<void> {
       applySettings(settings);
       syncWindowTheme();
     },
-    onBack: () => goHome(),
+    onBack: () => goBack(),
     onRefresh: async () => {
       toast("Scanning your folders…");
       await refreshLibrary();
@@ -1084,6 +1206,7 @@ async function renderSettingsPage(): Promise<void> {
     },
     onOpenTrash: () => {
       state = { name: "trash" };
+      pushNav({ name: "trash" });
       render();
     },
     onAddFolder: async () => {
@@ -1118,10 +1241,7 @@ async function renderTrashPage(): Promise<void> {
   const content = h("main", { class: "content", id: "main-content" });
   app.append(h("div", { class: "app-shell" }, content));
   await renderTrash(content, {
-    onBack: () => {
-      state = { name: "settings" };
-      render();
-    },
+    onBack: () => goBack(),
     onChanged: async () => {
       await refreshLibrary({ silent: true });
     },
@@ -1149,12 +1269,7 @@ document.addEventListener("keydown", (event) => {
   if (state.name === "settings" || state.name === "trash") {
     if (event.key === "Escape") {
       event.preventDefault();
-      if (state.name === "trash") {
-        state = { name: "settings" };
-        render();
-      } else {
-        goHome();
-      }
+      goBack();
     }
     return;
   }
@@ -1170,7 +1285,7 @@ document.addEventListener("keydown", (event) => {
   if (state.name !== "folder") return;
   if (event.key === "Escape") {
     if (selected.size > 0) clearSelection();
-    else goHome();
+    else goBack();
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
     event.preventDefault();
     selectAll();
@@ -1185,6 +1300,40 @@ document.addEventListener("keydown", (event) => {
 // ---------------------------------------------------------------------------
 
 async function boot(): Promise<void> {
+  history.scrollRestoration = "manual";
+  history.replaceState({ i: 0 }, "");
+  let lastPop = 0;
+  window.addEventListener("popstate", (event) => {
+    lastPop = performance.now();
+    const marker = event.state as { i?: number } | null;
+    const next = typeof marker?.i === "number" ? marker.i : 0;
+    navIndex = Math.min(navStack.length - 1, Math.max(0, next));
+    applyPlace(navStack[navIndex]);
+  });
+  // Hardware back/forward. WebView2 uses page history when there is one, and
+  // otherwise the button never reaches the page — so we do both, but only once.
+  const onMouseNav = (event: MouseEvent) => {
+    if (event.button !== 3 && event.button !== 4) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.button;
+    if (button === 3 && closeTopOverlay()) return;
+    window.setTimeout(() => {
+      if (performance.now() - lastPop < 80) return;
+      if (button === 3) {
+        if (navIndex > 0) history.back();
+      } else if (navIndex < navStack.length - 1) {
+        history.forward();
+      }
+    }, 40);
+  };
+  window.addEventListener("pointerdown", (event) => {
+    if (event.button === 3 || event.button === 4) event.preventDefault();
+  }, true);
+  window.addEventListener("mouseup", onMouseNav, true);
+  window.addEventListener("auxclick", onMouseNav, true);
+  window.addEventListener("pointerup", onMouseNav, true);
+
   applySettings(settings);
   watchSystemTheme(() => {
     if (settings.theme === "system") applySettings(settings);

@@ -170,16 +170,7 @@ button:disabled,
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
-  min-width: 178px;
-}
-
-.brand-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  object-fit: cover;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  min-width: 132px;
 }
 
 .brand-copy h1 {
