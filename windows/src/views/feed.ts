@@ -73,7 +73,7 @@ export function openFeed(options: FeedOptions): FeedHandle {
   const zoomHint = h(
     "span",
     { class: "feed-zoom-hint", "aria-hidden": "true" },
-    "Ctrl + scroll or pinch to zoom",
+    "Ctrl + scroll to zoom · right-drag to move",
   );
   const zoomBadge = h(
     "button",
@@ -126,12 +126,24 @@ export function openFeed(options: FeedOptions): FeedHandle {
     h("div", { class: "feed-tools" }, zoomHint, zoomBadge, counter, tracksButton, autoplayButton, infoButton),
   );
 
+  const scrollThumb = h("div", { class: "feed-scroll-thumb" });
+  const scrollRail = h(
+    "div",
+    {
+      class: "feed-scroll",
+      role: "scrollbar",
+      "aria-orientation": "vertical",
+      "aria-label": "Feed position",
+    },
+    scrollThumb,
+  );
   const overlay = h(
     "div",
     { class: "feed-overlay" },
     h("div", { class: "feed-progress" }, progressBar),
     topbar,
     feed,
+    scrollRail,
   );
 
   document.body.classList.add("feed-open");
@@ -166,6 +178,7 @@ export function openFeed(options: FeedOptions): FeedHandle {
 
   function sizeAllFrames(): void {
     for (let i = 0; i < frames.length; i += 1) sizeFrame(i);
+    updateScrollbar();
   }
 
   /** Resize one frame without moving the picture the reader is looking at. */
@@ -771,6 +784,16 @@ export function openFeed(options: FeedOptions): FeedHandle {
     applyFeedZoom(false);
   }
 
+  /** Move the zoomed picture with the pointer, in screen pixels, both axes. */
+  function panFeedBy(dx: number, dy: number): void {
+    if (feedScale <= MIN_FEED_ZOOM + 0.001) return;
+    if (dx) panFeed(dx);
+    if (!dy) return;
+    const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
+    // scrollTop is layout pixels; the feed is scaled, so divide to stay 1:1.
+    feed.scrollTop = Math.min(max, Math.max(0, feed.scrollTop - dy / feedScale));
+  }
+
   /** Back to fit: the badge and Ctrl+0 both land here. */
   function resetFeedZoom(animate: boolean): void {
     if (feedScale <= MIN_FEED_ZOOM + 0.001) return;
@@ -816,7 +839,9 @@ export function openFeed(options: FeedOptions): FeedHandle {
 
   const points = new Map<number, { x: number; y: number }>();
   let panning = false;
+  let rightPanning = false;
   let panLastX = 0;
+  let panLastY = 0;
   let panMoved = 0;
   let pinchStartDistance = 0;
   let pinchStartScale = 1;
@@ -855,6 +880,24 @@ export function openFeed(options: FeedOptions): FeedHandle {
     if (destroyed) return;
     const target = event.target as HTMLElement;
     if (target.closest("button, video")) return;
+    // Right-drag moves a zoomed picture up, down and sideways. Left-click stays
+    // free for play/pause, so the two gestures do not fight.
+    if (event.pointerType === "mouse" && event.button === 2) {
+      if (feedScale <= MIN_FEED_ZOOM + 0.001) return;
+      event.preventDefault();
+      stopWheel();
+      rightPanning = true;
+      panLastX = event.clientX;
+      panLastY = event.clientY;
+      panMoved = 0;
+      feed.classList.add("is-panning");
+      try {
+        feed.setPointerCapture(event.pointerId);
+      } catch {
+        /* synthetic pointers cannot be captured */
+      }
+      return;
+    }
     if (event.pointerType === "mouse" && event.button !== 0) return;
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -878,6 +921,17 @@ export function openFeed(options: FeedOptions): FeedHandle {
   });
 
   feed.addEventListener("pointermove", (event) => {
+    if (rightPanning) {
+      const dx = event.clientX - panLastX;
+      const dy = event.clientY - panLastY;
+      panLastX = event.clientX;
+      panLastY = event.clientY;
+      if (dx === 0 && dy === 0) return;
+      panFeedBy(dx, dy);
+      panMoved += Math.hypot(dx, dy);
+      event.preventDefault();
+      return;
+    }
     if (!points.has(event.pointerId)) return;
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -929,9 +983,14 @@ export function openFeed(options: FeedOptions): FeedHandle {
       return;
     }
     panning = false;
+    rightPanning = false;
     pinchStartDistance = 0;
     feed.classList.remove("is-panning");
   }
+  feed.addEventListener("contextmenu", (event) => {
+    // Right-drag is a pan, not a menu.
+    event.preventDefault();
+  });
   feed.addEventListener("pointerup", endPointer);
   feed.addEventListener("pointercancel", endPointer);
 
@@ -1071,9 +1130,11 @@ export function openFeed(options: FeedOptions): FeedHandle {
   // lands, so the next picture comes up gradually instead of replacing the
   // screen. Trackpads already send small deltas and keep their own feel.
 
-  let wheelTarget = 0;
+  // Velocity, not a chase: a mouse notch becomes a short glide instead of a
+  // jump, and a trackpad tick is applied as it arrives so it does not lag.
+  let scrollVelocity = 0;
   let wheelFrame = 0;
-  let wheelGliding = false;
+  let wheelLast = 0;
 
   function cancelFrame(): void {
     if (wheelFrame) cancelAnimationFrame(wheelFrame);
@@ -1081,31 +1142,30 @@ export function openFeed(options: FeedOptions): FeedHandle {
   }
 
   function stopWheel(): void {
-    wheelGliding = false;
-    wheelTarget = feed.scrollTop;
+    scrollVelocity = 0;
     cancelFrame();
   }
 
-  /** Ease the scroll position towards `target`; returns false when done. */
-  function glideTo(target: number, factor: number): boolean {
-    const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
-    const goal = Math.min(max, Math.max(0, target));
-    const distance = goal - feed.scrollTop;
-    if (Math.abs(distance) < 0.6) {
-      feed.scrollTop = goal;
-      return false;
-    }
-    feed.scrollTop += distance * factor;
-    return true;
-  }
-
-  function runWheel(): void {
-    cancelFrame();
-    const step = () => {
+  function runMomentum(): void {
+    if (wheelFrame) return;
+    wheelLast = performance.now();
+    const step = (now: number) => {
       wheelFrame = 0;
       if (destroyed) return;
-      if (glideTo(wheelTarget, 0.24)) wheelFrame = requestAnimationFrame(step);
-      else wheelGliding = false;
+      const dt = Math.min(2, Math.max(0.5, (now - wheelLast) / 16.67));
+      wheelLast = now;
+      const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
+      const before = feed.scrollTop;
+      const next = Math.min(max, Math.max(0, before + scrollVelocity * dt));
+      feed.scrollTop = next;
+      const blocked = next === before && Math.abs(scrollVelocity) > 0.4;
+      // Time-based decay, so 60Hz and 144Hz feel the same.
+      scrollVelocity *= Math.pow(0.9, dt);
+      if (blocked || Math.abs(scrollVelocity) < 0.25) {
+        scrollVelocity = 0;
+        return;
+      }
+      wheelFrame = requestAnimationFrame(step);
     };
     wheelFrame = requestAnimationFrame(step);
   }
@@ -1131,21 +1191,20 @@ export function openFeed(options: FeedOptions): FeedHandle {
       event.preventDefault();
       const unit =
         event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? feed.clientHeight : 1;
-      const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
-      if (!wheelGliding) {
-        wheelTarget = feed.scrollTop;
-        wheelGliding = true;
-      }
       const raw = event.deltaY * unit;
-      // A mouse notch is ~120px, which would barely move the feed; real
-      // trackpad ticks are tiny, so they get only a small boost.
-      const scale = Math.abs(raw) >= 60 ? 2 : 1.15;
-      const delta = Math.max(
-        -feed.clientHeight,
-        Math.min(feed.clientHeight, raw * scale),
-      );
-      wheelTarget = Math.min(max, Math.max(0, wheelTarget + delta));
-      runWheel();
+      const mouseNotch = event.deltaMode !== 0 || Math.abs(event.deltaY) >= 50;
+      if (mouseNotch) {
+        // One notch glides about a fifth of the screen, in small steps.
+        const impulse = Math.sign(raw || 1) * Math.min(18, Math.abs(raw) / 8);
+        scrollVelocity = Math.max(-42, Math.min(42, scrollVelocity + impulse));
+      } else {
+        // Trackpad already sends a stream of small ticks. Follow them, and
+        // keep only a short tail so the motion does not stutter between ticks.
+        const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
+        feed.scrollTop = Math.min(max, Math.max(0, feed.scrollTop + raw * 0.62));
+        scrollVelocity = Math.max(-28, Math.min(28, scrollVelocity * 0.4 + raw * 0.018));
+      }
+      runMomentum();
     },
     { passive: false },
   );
@@ -1182,7 +1241,48 @@ export function openFeed(options: FeedOptions): FeedHandle {
     if (autoplayOn) startCurrent();
   }
 
+  function updateScrollbar(): void {
+    const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
+    const track = scrollRail.clientHeight;
+    if (max < 2 || track < 8) {
+      scrollRail.classList.add("hidden");
+      return;
+    }
+    scrollRail.classList.remove("hidden");
+    const thumbH = Math.max(28, Math.min(track - 8, (feed.clientHeight / feed.scrollHeight) * track));
+    const travel = Math.max(1, track - thumbH);
+    const top = (feed.scrollTop / max) * travel;
+    scrollThumb.style.height = `${thumbH}px`;
+    scrollThumb.style.transform = `translateY(${top}px)`;
+    scrollRail.setAttribute("aria-valuenow", String(Math.round((feed.scrollTop / max) * 100)));
+  }
+
+  scrollThumb.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    stopWheel();
+    const startY = event.clientY;
+    const startTop = feed.scrollTop;
+    scrollRail.classList.add("is-drag");
+    const onMove = (move: PointerEvent) => {
+      const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
+      const travel = Math.max(1, scrollRail.clientHeight - scrollThumb.offsetHeight);
+      feed.scrollTop = Math.min(
+        max,
+        Math.max(0, startTop + ((move.clientY - startY) / travel) * max),
+      );
+    };
+    const onUp = () => {
+      scrollRail.classList.remove("is-drag");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  });
+
   feed.addEventListener("scroll", () => {
+    updateScrollbar();
     window.clearTimeout(scrollTimer);
     scrollTimer = window.setTimeout(() => {
       if (destroyed) return;
@@ -1287,6 +1387,7 @@ export function openFeed(options: FeedOptions): FeedHandle {
   ensureMedia(start);
   requestAnimationFrame(() => {
     feed.scrollTop = scrollTopFor(start);
+    updateScrollbar();
     // Opening a video should start it, like tapping a reel does on the phone.
     if (autoplayOn || items[start]?.kind === "video") startCurrent();
   });

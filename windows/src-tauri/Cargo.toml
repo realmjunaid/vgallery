@@ -1,6 +1,6 @@
 [package]
 name = "vgallery"
-version = "1.0.1"
+version = "1.0.2"
 description = "VGallery for Windows - your photo library, scrolled like reels."
 authors = ["M Junaid"]
 edition = "2021"

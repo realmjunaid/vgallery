@@ -384,7 +384,7 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
     void openUrl(url).catch((error) => toast(String(error), "error"));
   };
 
-  const version = ctx.info?.version ?? "1.0.1";
+  const version = ctx.info?.version ?? "1.0.2";
   const updateActions = h("div", { class: "inline-actions" });
   const updateBar = h("div", { class: "update-progress-bar" });
   const updateProgress = h(
@@ -601,7 +601,7 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
         h(
           "div",
           { class: "about-sheet-brand" },
-          icon("sparkle", 26),
+          h("img", { class: "about-app-icon", src: "/app-icon.png", alt: "", width: "40", height: "40" }),
           h(
             "div",
             {},

@@ -4,7 +4,7 @@
 [VGallery](../README.md), written in **Rust + Tauri** instead of Kotlin. Same idea, same
 black-and-violet look, much smaller footprint than a JVM app.
 
-> Status: **1.0.1.** The gallery, folder grouping, grid/list, full-screen feed,
+> Status: **1.0.2.** The gallery, folder grouping, grid/list, full-screen feed,
 > autoplay, Trash and Settings are in. Native OS integration is intentionally small.
 
 ## Why Rust + Tauri?
@@ -168,7 +168,7 @@ windows/
 Nothing is copied out of your folders except thumbnails and files you delete (which are
 moved, not copied, into the Trash folder).
 
-## Not in 1.0.1 yet
+## Not in 1.0.2 yet
 
 - Switching audio/subtitle tracks that are muxed inside an MP4/MKV (use sidecar files —
   see [Subtitles & audio tracks](#subtitles--audio-tracks)).

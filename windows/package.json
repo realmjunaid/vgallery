@@ -1,7 +1,7 @@
 {
   "name": "vgallery-windows",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "VGallery for Windows - your photo library, scrolled like reels.",
   "scripts": {

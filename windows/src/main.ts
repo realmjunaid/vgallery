@@ -228,7 +228,13 @@ function brand(): HTMLElement {
   return h(
     "div",
     { class: "brand" },
-    h("div", { class: "brand-mark" }, h("span", {}, "V"), icon("play", 13)),
+    h("img", {
+      class: "brand-mark",
+      src: "/app-icon.png",
+      alt: "",
+      width: "36",
+      height: "36",
+    }),
     h("div", { class: "brand-copy" }, h("h1", {}, "VGallery"), h("p", {}, "for Windows")),
   );
 }
