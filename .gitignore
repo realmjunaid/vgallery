@@ -12,7 +12,8 @@
 .cxx
 local.properties
 /build
-/app/build
+/android/app/build
+/android/build
 .DS_Store
 # Release signing: the key and its passwords never go into the repo (see README › Releasing)
 keystore.properties
