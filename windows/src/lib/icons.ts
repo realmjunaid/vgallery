@@ -27,7 +27,10 @@ export type IconName =
   | "windows"
   | "heart"
   | "captions"
-  | "audio";
+  | "audio"
+  | "person"
+  | "download"
+  | "chevron";
 
 /** Inner markup for a 24x24 icon. Static, author-controlled strings only. */
 const PATHS: Record<IconName, string> = {
@@ -77,6 +80,11 @@ const PATHS: Record<IconName, string> = {
     '<rect x="3" y="4.5" width="18" height="15" rx="3.2"/><path d="M10.4 10.2a2.4 2.4 0 1 0 0 3.6"/><path d="M16.6 10.2a2.4 2.4 0 1 0 0 3.6"/>',
   audio:
     '<path d="M4 9.6h3.2L12 6.2v11.6L7.2 14.4H4Z"/><path d="M15.4 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.6a7.6 7.6 0 0 1 0 10.8"/>',
+  person:
+    '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.5 3.5-5.4 7-5.4s6.2 1.9 7 5.4"/>',
+  download:
+    '<path d="M12 4v10"/><path d="m7.6 10 4.4 4.4 4.4-4.4"/><path d="M5 19.5h14"/>',
+  chevron: '<path d="m9.5 6 6 6-6 6"/>',
 };
 
 export function icon(name: IconName, size = 20, strokeWidth = 1.8): SVGSVGElement {

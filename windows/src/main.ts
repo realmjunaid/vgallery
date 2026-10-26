@@ -19,7 +19,7 @@ import {
   type MediaItem,
 } from "./lib/api";
 import { folderStats, groupFolders, sortGroups, sortItems, type FolderGroup } from "./lib/albums";
-import { askDialog, clear, h, iconButton, openSheet, toast } from "./lib/dom";
+import { askDialog, clear, h, hasOverlay, iconButton, openSheet, toast } from "./lib/dom";
 import { formatBytes, formatDate, kindLabel, plural } from "./lib/format";
 import { icon, type IconName } from "./lib/icons";
 import { applySettings, loadSettings, resolveTheme, saveSettings, watchSystemTheme, type Settings } from "./lib/settings";
@@ -104,7 +104,7 @@ function folderCover(folder: FolderEntry): MediaItem | null {
 
 function viewKey(): string {
   if (state.name === "home") return `home:${homeTab}`;
-  if (state.name === "folder") return `folder:${state.folder.path}`;
+  if (state.name === "folder") return `folder:${state.folder.path}:${homeTab}`;
   return state.name;
 }
 
@@ -492,16 +492,39 @@ function errorState(message: string, retry: () => void): HTMLElement {
 }
 
 function emptyLibrary(tab: Tab): HTMLElement {
+  const otherTab: Tab = tab === "photos" ? "videos" : "photos";
+  const hasAnything = (library?.totalCount ?? 0) > 0;
   return h(
     "div",
     { class: "empty-state", id: "empty-library" },
     icon(tab === "photos" ? "photos" : "videos", 42),
     h("h2", {}, tab === "photos" ? "No photos yet" : "No videos yet"),
-    h("p", {}, "Add a folder and VGallery will lay it out like a reel."),
+    h(
+      "p",
+      {},
+      hasAnything
+        ? `There are no ${tab} in your folders yet. Switch to ${otherTab === "photos" ? "Photos" : "Videos"}, or add another folder.`
+        : "Add a folder and VGallery will lay it out like a reel.",
+    ),
     h(
       "div",
       { class: "inline-actions" },
-      h("button", { class: "btn btn-primary", type: "button", onclick: () => void pickFolder() }, icon("plus", 17), "Add folder"),
+      hasAnything
+        ? h(
+            "button",
+            {
+              class: "btn btn-ghost",
+              type: "button",
+              onclick: () => {
+                homeTab = otherTab;
+                homeQuery = "";
+                render();
+              },
+            },
+            icon(otherTab === "photos" ? "photos" : "videos", 17),
+            otherTab === "photos" ? "Open Photos" : "Open Videos",
+          )
+        : h("button", { class: "btn btn-primary", type: "button", onclick: () => void pickFolder() }, icon("plus", 17), "Add folder"),
       h("button", { class: "btn btn-ghost", type: "button", onclick: () => { state = { name: "settings" }; render(); } }, icon("settings", 16), "Settings"),
     ),
   );
@@ -600,11 +623,27 @@ function renderFolder(): void {
   const shell = h("div", { class: "app-shell" }, head, content);
 
   const itemsWrap = h("div", { class: settings.folderView === "grid" ? "media-grid" : "media-list" });
-  content.append(itemsWrap);
-
-  items.forEach((item, index) => {
-    itemsWrap.append(settings.folderView === "grid" ? gridTile(item, index, items) : listRow(item, index, items));
-  });
+  if (items.length === 0) {
+    content.append(
+      h(
+        "div",
+        { class: "empty-state compact" },
+        icon(homeTab === "photos" ? "photos" : "videos", 38),
+        h("h2", {}, homeTab === "photos" ? "No photos in this folder" : "No videos in this folder"),
+        h("p", {}, "Switch tabs, or go back to the library and pick another folder."),
+        h(
+          "div",
+          { class: "inline-actions" },
+          h("button", { class: "btn btn-ghost", type: "button", onclick: () => goHome() }, icon("back", 16), "Back to library"),
+        ),
+      ),
+    );
+  } else {
+    content.append(itemsWrap);
+    items.forEach((item, index) => {
+      itemsWrap.append(settings.folderView === "grid" ? gridTile(item, index, items) : listRow(item, index, items));
+    });
+  }
 
   const bar = buildSelectionBar();
   shell.append(bar);
@@ -623,10 +662,12 @@ function gridTile(item: MediaItem, index: number, items: MediaItem[]): HTMLEleme
   const tile = h("figure", {
     class: "tile",
     tabindex: "0",
+    role: "button",
+    "aria-label": `${item.name}, ${kindLabel(item.kind)}, ${formatBytes(item.size)}`,
     dataset: { id: item.id },
     onclick: () => activateItem(item, index, items),
     onkeydown: (event: KeyboardEvent) => {
-      if (event.key === "Enter") {
+      if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         activateItem(item, index, items);
       }
@@ -665,10 +706,12 @@ function listRow(item: MediaItem, index: number, items: MediaItem[]): HTMLElemen
   const row = h("div", {
     class: "list-row",
     tabindex: "0",
+    role: "button",
+    "aria-label": `${item.name}, ${kindLabel(item.kind)}, ${formatBytes(item.size)}`,
     dataset: { id: item.id },
     onclick: () => activateItem(item, index, items),
     onkeydown: (event: KeyboardEvent) => {
-      if (event.key === "Enter") {
+      if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         activateItem(item, index, items);
       }
@@ -744,6 +787,10 @@ function toggleSelect(id: string): void {
 }
 
 function selectAll(): void {
+  if (currentItems.length > 0 && selected.size === currentItems.length) {
+    clearSelection();
+    return;
+  }
   selected = new Set(currentItems.map((item) => item.id));
   updateSelection();
 }
@@ -784,8 +831,20 @@ async function deleteSelected(): Promise<void> {
   if (!ok) return;
 
   try {
+    releaseVideoThumbs();
     const moved = await trashItems(items.map((item) => item.path));
-    toast(`${moved} ${plural(moved, "item")} moved to Trash`);
+    if (moved === 0) {
+      toast("Nothing could be moved — the file may be open in another app.", "error");
+      return;
+    }
+    if (moved < items.length) {
+      toast(
+        `${moved} of ${items.length} moved to Trash. The rest are open in another app.`,
+        "error",
+      );
+    } else {
+      toast(`${moved} ${plural(moved, "item")} moved to Trash`);
+    }
     selected = new Set();
     await refreshLibrary({ silent: true });
     if (state.name === "folder" && !folderByPath(state.folder.path)) {
@@ -794,6 +853,18 @@ async function deleteSelected(): Promise<void> {
     render();
   } catch (error) {
     toast(String(error), "error");
+  }
+}
+
+/**
+ * Windows keeps a file locked while a <video> is still pointing at it. Clear
+ * the poster frames before moving files so the move cannot fail on a lock.
+ */
+function releaseVideoThumbs(): void {
+  for (const video of document.querySelectorAll<HTMLVideoElement>("video.thumb-media")) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
   }
 }
 
@@ -1064,9 +1135,41 @@ async function renderTrashPage(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 document.addEventListener("keydown", (event) => {
-  if (feedHandle || state.name !== "folder") return;
-  const typing = (event.target as HTMLElement | null)?.tagName?.match(/INPUT|TEXTAREA|SELECT/);
-  if (typing) return;
+  if (feedHandle) return;
+  // A dialog or sheet owns the keys while it is open.
+  if (hasOverlay()) return;
+  const target = event.target as HTMLElement | null;
+  const typing = target?.tagName?.match(/INPUT|TEXTAREA|SELECT/);
+  if (typing) {
+    // Escape leaves a search box without losing the library.
+    if (event.key === "Escape" && state.name === "home") {
+      (target as HTMLInputElement).blur();
+    }
+    return;
+  }
+
+  if (state.name === "settings" || state.name === "trash") {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (state.name === "trash") {
+        state = { name: "settings" };
+        render();
+      } else {
+        goHome();
+      }
+    }
+    return;
+  }
+
+  if (state.name === "home") {
+    if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      document.querySelector<HTMLInputElement>(".search-input")?.focus();
+    }
+    return;
+  }
+
+  if (state.name !== "folder") return;
   if (event.key === "Escape") {
     if (selected.size > 0) clearSelection();
     else goHome();

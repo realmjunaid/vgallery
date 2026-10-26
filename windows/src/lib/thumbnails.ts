@@ -11,7 +11,9 @@ const loader = new IntersectionObserver(
       else if (el instanceof HTMLVideoElement) {
         const src = el.dataset.src;
         if (src) {
-          el.src = assetUrl(src);
+          // The #t fragment asks WebView2 to paint the frame at 0.1s even with
+          // metadata-only preload, so a video cover is never just black.
+          el.src = `${assetUrl(src)}#t=0.1`;
           el.load();
         }
       }
@@ -56,10 +58,10 @@ export function thumbFor(item: MediaItem, size = 480): HTMLElement {
     video.playsInline = true;
     video.preload = "metadata";
     video.dataset.src = item.path;
-    video.addEventListener("loadeddata", () => {
+    video.addEventListener("loadedmetadata", () => {
       // Nudge the first frame into view on WebView2.
       try {
-        video.currentTime = 0.05;
+        video.currentTime = 0.1;
       } catch {
         /* metadata only */
       }

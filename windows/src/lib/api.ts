@@ -12,6 +12,9 @@ export interface MediaItem {
   kind: MediaKind;
   size: number;
   modified: number;
+  /** Pixel width of a picture; 0 for videos until the player reports it. */
+  width: number;
+  height: number;
 }
 
 export interface FolderEntry {

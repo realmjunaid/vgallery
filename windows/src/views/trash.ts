@@ -68,8 +68,28 @@ export async function renderTrash(container: HTMLElement, ctx: TrashContext): Pr
     clear(list);
     const entries = await listTrash().catch((error) => {
       toast(String(error), "error");
-      return [] as TrashEntry[];
+      return null;
     });
+    if (entries === null) {
+      emptyButton.disabled = true;
+      subline.textContent = "Could not read the Trash.";
+      list.append(
+        h(
+          "div",
+          { class: "empty-state compact" },
+          icon("info", 38),
+          h("h2", {}, "The Trash could not be read"),
+          h("p", {}, "Close and reopen VGallery, then try again."),
+          h(
+            "div",
+            { class: "inline-actions" },
+            h("button", { class: "btn btn-primary", type: "button", onclick: () => void load() }, "Try again"),
+          ),
+        ),
+      );
+      return;
+    }
+    emptyButton.disabled = entries.length === 0;
     subline.textContent =
       entries.length === 0
         ? "Nothing here. Deleted photos and videos land here first."

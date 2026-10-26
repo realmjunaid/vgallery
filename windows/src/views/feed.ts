@@ -6,7 +6,7 @@ import {
   type TrackOption,
   type VideoTracks,
 } from "../lib/api";
-import { h, iconButton, openSheet, toast } from "../lib/dom";
+import { h, hasOverlay, iconButton, openSheet, toast } from "../lib/dom";
 import { formatBytes, kindLabel } from "../lib/format";
 import { icon } from "../lib/icons";
 
@@ -54,8 +54,9 @@ function saveTrackPrefs(prefs: Record<string, TrackPref>): void {
 }
 
 /**
- * The reels-style vertical feed. One item per screen, scroll-snapped, with the
- * playing item held in the middle and the next one gliding up into the middle.
+ * The reels-style feed, now as a continuous strip: every item keeps its own
+ * size (capped to the window), so a screen can show one picture and the top of
+ * the next, and a small scroll reveals the rest instead of paging.
  */
 export function openFeed(options: FeedOptions): FeedHandle {
   const { items, title, autoplaySeconds } = options;
@@ -65,11 +66,27 @@ export function openFeed(options: FeedOptions): FeedHandle {
   let autoplayOn = options.initialAutoplay ?? false;
   let timer = 0;
   let captionTimer = 0;
+  let hintTimer = 0;
   let scrollTimer = 0;
   let destroyed = false;
 
   const progressBar = h("span", { class: "feed-progress-bar" });
   const counter = h("span", { class: "feed-counter" }, `${start + 1} / ${items.length}`);
+  const zoomHint = h(
+    "span",
+    { class: "feed-zoom-hint", "aria-hidden": "true" },
+    "Ctrl + scroll or pinch to zoom",
+  );
+  const zoomBadge = h(
+    "button",
+    {
+      class: "feed-zoom hidden",
+      type: "button",
+      title: "Reset zoom (Ctrl+0)",
+      "aria-label": "Reset feed zoom",
+    },
+    "1×",
+  );
   const autoplayButton = iconButton(autoplayOn ? "pause" : "play", "Autoplay", () => toggleAutoplay());
   const backButton = iconButton("back", "Back", () => destroy());
   const tracksButton = iconButton("captions", "Subtitles and audio", () => void openTracksSheet(), "feed-tracks");
@@ -88,13 +105,20 @@ export function openFeed(options: FeedOptions): FeedHandle {
   const track = h("div", { class: "feed-track" });
   const feed = h("div", { class: "feed", tabindex: "0" }, track);
 
+  const frames: HTMLElement[] = [];
   const slots: HTMLElement[] = items.map((item, i) => {
-    const slot = h("div", {
-      class: "feed-item",
-      dataset: { index: String(i) },
-      "aria-label": item.name,
-    });
+    const frame = h("div", { class: "feed-frame" });
+    const slot = h(
+      "div",
+      {
+        class: "feed-item",
+        dataset: { index: String(i) },
+        "aria-label": item.name,
+      },
+      frame,
+    );
     track.append(slot);
+    frames.push(frame);
     return slot;
   });
 
@@ -108,7 +132,7 @@ export function openFeed(options: FeedOptions): FeedHandle {
       h("strong", {}, title),
       h("span", {}, `${items.length} ${items.length === 1 ? "item" : "items"}`),
     ),
-    h("div", { class: "feed-tools" }, counter, tracksButton, autoplayButton, infoButton),
+    h("div", { class: "feed-tools" }, zoomHint, zoomBadge, counter, tracksButton, autoplayButton, infoButton),
   );
 
   const overlay = h(
@@ -123,6 +147,55 @@ export function openFeed(options: FeedOptions): FeedHandle {
   document.body.classList.add("feed-open");
   document.getElementById("overlay-root")?.append(overlay);
   feed.focus({ preventScroll: true });
+
+  // --- layout ------------------------------------------------------------
+  //
+  // Every item gets its box before the picture loads, so scrolling never
+  // jumps when images arrive. Pictures keep their own shape: a tall photo
+  // gets a tall box, a panorama a short one, and small screenshots stay small.
+
+  const MAX_MEDIA_HEIGHT = 0.48;
+  const SIDE_INSET = 36;
+  const MAX_MEDIA_WIDTH = 1280;
+
+  function sizeFrame(i: number): void {
+    const frame = frames[i];
+    const item = items[i];
+    if (!frame || !item) return;
+    const availableWidth = Math.max(160, feed.clientWidth - SIDE_INSET);
+    const availableHeight = Math.max(160, feed.clientHeight);
+    const limitW = Math.min(availableWidth, MAX_MEDIA_WIDTH);
+    const limitH = availableHeight * MAX_MEDIA_HEIGHT;
+    let ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 16 / 9;
+    if (!Number.isFinite(ratio) || ratio <= 0) ratio = 16 / 9;
+    let width = Math.min(limitW, limitH * ratio);
+    // Never blow a small file up past its real pixels.
+    if (item.width > 0) width = Math.min(width, item.width);
+    let height = width / ratio;
+    if (height < 72) {
+      height = 72;
+      width = height * ratio;
+    }
+    frame.style.width = `${Math.round(width)}px`;
+    frame.style.height = `${Math.round(height)}px`;
+  }
+
+  function sizeAllFrames(): void {
+    for (let i = 0; i < frames.length; i += 1) sizeFrame(i);
+  }
+
+  /** Resize one frame without moving the picture the reader is looking at. */
+  function resizeFrame(i: number): void {
+    if (i === index) {
+      sizeFrame(i);
+      return;
+    }
+    const anchor = slots[index];
+    const before = anchor.getBoundingClientRect().top;
+    sizeFrame(i);
+    const after = anchor.getBoundingClientRect().top;
+    if (i < index && after !== before) feed.scrollTop += (after - before) / feedScale;
+  }
 
   // --- media -------------------------------------------------------------
 
@@ -148,9 +221,10 @@ export function openFeed(options: FeedOptions): FeedHandle {
   }));
   const trackPrefs = loadTrackPrefs();
 
-  function mediaFor(i: number): HTMLElement | null {
+  function ensureMedia(i: number): HTMLElement | null {
     const slot = slots[i];
-    if (!slot) return null;
+    const frame = frames[i];
+    if (!slot || !frame) return null;
     if (states[i].media) return states[i].media;
     const item = items[i];
     let media: HTMLElement;
@@ -174,38 +248,54 @@ export function openFeed(options: FeedOptions): FeedHandle {
         slot.classList.remove("is-playing");
         if (autoplayOn) advance();
       });
-      media = video;
-      slot.append(video);
-      const play = h(
-        "button",
-        { class: "feed-play", type: "button", "aria-label": "Play" },
-        icon("play", 34),
-      );
-      play.addEventListener("click", (event) => {
-        event.stopPropagation();
-        toggleVideo(video);
+      video.addEventListener("loadedmetadata", () => {
+        if (item.width > 0 && item.height > 0) return;
+        if (!video.videoWidth || !video.videoHeight) return;
+        item.width = video.videoWidth;
+        item.height = video.videoHeight;
+        resizeFrame(i);
       });
-      slot.append(play);
+      media = video;
+      frame.append(video);
+      if (!slot.querySelector(".feed-play")) {
+        const play = h(
+          "button",
+          { class: "feed-play", type: "button", "aria-label": "Play" },
+          icon("play", 34),
+        );
+        play.addEventListener("click", (event) => {
+          event.stopPropagation();
+          toggleVideo(video);
+        });
+        slot.append(play);
+      }
     } else {
       const img = h("img", {
         class: "feed-media",
         src: assetUrl(item.path),
         alt: item.name,
         draggable: false,
+        decoding: "async",
       });
       slot.classList.add("is-loading");
-      img.addEventListener("load", () => slot.classList.remove("is-loading"));
+      img.addEventListener("load", () => {
+        slot.classList.remove("is-loading");
+        if (item.width > 0 && item.height > 0) return;
+        if (!img.naturalWidth || !img.naturalHeight) return;
+        item.width = img.naturalWidth;
+        item.height = img.naturalHeight;
+        resizeFrame(i);
+      });
       img.addEventListener("error", () => {
         slot.classList.remove("is-loading");
         slot.classList.add("is-error");
       });
-      slot.append(img);
+      frame.append(img);
       media = img;
     }
 
     states[i].media = media;
     states[i].kind = item.kind;
-    setupZoom(slot, media);
     if (item.kind === "video") void hydrateTracks(i);
     return media;
   }
@@ -223,18 +313,17 @@ export function openFeed(options: FeedOptions): FeedHandle {
     }
   }
 
-  function releaseFar(center: number): void {
-    for (let i = 0; i < states.length; i += 1) {
-      if (Math.abs(i - center) <= 3) continue;
-      const state = states[i];
-      if (!state.media) continue;
-      if (state.media instanceof HTMLVideoElement) state.media.pause();
-      releaseTracks(i);
-      state.media.remove();
-      state.media = null;
-      state.kind = null;
-      slots[i].classList.remove("is-error", "is-playing", "is-loading");
-    }
+  /** Drop a far-away picture or video; its frame keeps the layout steady. */
+  function releaseSlot(i: number): void {
+    if (i === index) return;
+    const state = states[i];
+    if (!state.media) return;
+    if (state.media instanceof HTMLVideoElement) state.media.pause();
+    releaseTracks(i);
+    state.media.remove();
+    state.media = null;
+    state.kind = null;
+    slots[i].classList.remove("is-error", "is-playing", "is-loading");
   }
 
   function toggleVideo(video: HTMLVideoElement): void {
@@ -624,74 +713,264 @@ export function openFeed(options: FeedOptions): FeedHandle {
     });
   }
 
-  // --- zoom --------------------------------------------------------------
+  // --- global feed zoom ---------------------------------------------------
+  //
+  // Google Drive PDF-viewer style, matching the Android FeedZoomState: one
+  // scale for the whole feed, so a pinch (or Ctrl + wheel) enlarges every
+  // visible item together. The feed keeps owning vertical movement, so
+  // scrolling still works at any zoom; only the sideways offset is clamped.
 
-  function setupZoom(slot: HTMLElement, media: HTMLElement): void {
-    if (!(media instanceof HTMLImageElement)) return;
-    let scale = 1;
-    let x = 0;
-    let y = 0;
-    let dragging = false;
-    let lastX = 0;
-    let lastY = 0;
+  const MIN_FEED_ZOOM = 1;
+  const MAX_FEED_ZOOM = 10;
+  const DOUBLE_CLICK_ZOOM = 2;
+  let feedScale = 1;
+  let feedOffsetX = 0;
+  let zoomTransition = 0;
 
-    const apply = () => {
-      media.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-      media.style.cursor = scale > 1 ? (dragging ? "grabbing" : "grab") : "";
-      slot.classList.toggle("is-zoomed", scale > 1);
-    };
-
-    slot.addEventListener(
-      "wheel",
-      (event) => {
-        if (!event.ctrlKey) return;
-        event.preventDefault();
-        scale = Math.min(6, Math.max(1, scale * (event.deltaY < 0 ? 1.15 : 1 / 1.15)));
-        if (scale === 1) {
-          x = 0;
-          y = 0;
-        }
-        apply();
-      },
-      { passive: false },
-    );
-
-    slot.addEventListener("dblclick", () => {
-      scale = scale > 1 ? 1 : 2;
-      x = 0;
-      y = 0;
-      apply();
-    });
-
-    slot.addEventListener("pointerdown", (event) => {
-      if (scale <= 1) return;
-      dragging = true;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      slot.setPointerCapture(event.pointerId);
-      apply();
-    });
-    slot.addEventListener("pointermove", (event) => {
-      if (!dragging) return;
-      x += event.clientX - lastX;
-      y += event.clientY - lastY;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      apply();
-    });
-    const stopDrag = (event: PointerEvent) => {
-      if (!dragging) return;
-      dragging = false;
-      try {
-        slot.releasePointerCapture(event.pointerId);
-      } catch {
-        /* pointer already released */
-      }
-      apply();
-    };
-    slot.addEventListener("pointerup", stopDrag);
-    slot.addEventListener("pointercancel", stopDrag);
+  /** The feed's centre in client pixels: the point the scale is anchored to. */
+  function feedCenterX(): number {
+    const rect = overlay.getBoundingClientRect();
+    return rect.left + feed.clientWidth / 2;
   }
+
+  function clampFeedOffset(): void {
+    const limit = Math.max(0, (feed.clientWidth * (feedScale - 1)) / 2);
+    feedOffsetX = Math.min(limit, Math.max(-limit, feedOffsetX));
+  }
+
+  function applyFeedZoom(animate: boolean): void {
+    if (feedScale <= MIN_FEED_ZOOM + 0.001) {
+      feedScale = MIN_FEED_ZOOM;
+      feedOffsetX = 0;
+      window.clearTimeout(zoomTransition);
+      feed.style.transition = "";
+      feed.style.transform = "";
+      feed.classList.remove("is-zoomed", "is-panning");
+      zoomBadge.classList.add("hidden");
+      zoomBadge.textContent = "1×";
+      return;
+    }
+    feed.classList.add("is-zoomed");
+    zoomBadge.classList.remove("hidden");
+    zoomHint.classList.add("hidden");
+    zoomBadge.textContent = `${feedScale.toFixed(feedScale < 2 ? 2 : 1)}×`;
+    window.clearTimeout(zoomTransition);
+    if (animate) {
+      feed.style.transition = "transform 0.16s ease-out";
+      zoomTransition = window.setTimeout(() => {
+        feed.style.transition = "";
+      }, 180);
+    } else {
+      feed.style.transition = "";
+    }
+    feed.style.transform = `translate3d(${feedOffsetX}px, 0px, 0px) scale(${feedScale})`;
+  }
+
+  /** Zoom so the spot under `clientX` stays put, like the Android pinch math. */
+  function zoomFeedTo(target: number, clientX: number, animate: boolean): void {
+    const next = Math.min(MAX_FEED_ZOOM, Math.max(MIN_FEED_ZOOM, target));
+    if (Math.abs(next - feedScale) < 0.001) return;
+    // Keep the point under the pointer fixed: measure it from the centre, then
+    // scale the existing offset by the same factor as the content.
+    const pivot = clientX - feedCenterX();
+    const factor = next / feedScale;
+    feedOffsetX = pivot * (1 - factor) + feedOffsetX * factor;
+    feedScale = next;
+    clampFeedOffset();
+    applyFeedZoom(animate);
+  }
+
+  function panFeed(dx: number): void {
+    if (feedScale <= MIN_FEED_ZOOM + 0.001) return;
+    feedOffsetX += dx;
+    clampFeedOffset();
+    applyFeedZoom(false);
+  }
+
+  /** Back to fit: the badge and Ctrl+0 both land here. */
+  function resetFeedZoom(animate: boolean): void {
+    if (feedScale <= MIN_FEED_ZOOM + 0.001) return;
+    feedScale = MIN_FEED_ZOOM;
+    feedOffsetX = 0;
+    applyFeedZoom(animate);
+  }
+
+  // Trackpad pinch arrives as Ctrl + wheel in WebView2; Ctrl + wheel on a
+  // mouse does the same. Both zoom the whole feed around the pointer.
+  feed.addEventListener(
+    "wheel",
+    (event) => {
+      if (!event.ctrlKey || destroyed) return;
+      event.preventDefault();
+      stopWheel();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+      const factor = Math.exp(-event.deltaY * unit * 0.0012);
+      zoomFeedTo(feedScale * factor, event.clientX, true);
+    },
+    { passive: false },
+  );
+
+  // Double-click a picture: fit <-> 2x, anchored where it was clicked.
+  feed.addEventListener("dblclick", (event) => {
+    if (destroyed) return;
+    const target = event.target as HTMLElement;
+    if (!target.closest(".feed-frame")) return;
+    if (target.closest("video, button")) return;
+    event.preventDefault();
+    stopWheel();
+    const zoomedIn = feedScale > MIN_FEED_ZOOM + 0.001;
+    zoomFeedTo(zoomedIn ? MIN_FEED_ZOOM : DOUBLE_CLICK_ZOOM, event.clientX, true);
+  });
+
+  // The badge in the top bar is a one-click way back to fit.
+  zoomBadge.addEventListener("click", (event) => {
+    event.stopPropagation();
+    resetFeedZoom(true);
+  });
+
+  // --- pinch and sideways pan --------------------------------------------
+
+  const points = new Map<number, { x: number; y: number }>();
+  let panning = false;
+  let panLastX = 0;
+  let panMoved = 0;
+  let pinchStartDistance = 0;
+  let pinchStartScale = 1;
+  let pinchStartOffset = 0;
+  let suppressClick = false;
+  let suppressTimer = 0;
+
+  /** A pan ends with a click; swallow it so it does not toggle autoplay. */
+  function suppressNextClick(): void {
+    suppressClick = true;
+    window.clearTimeout(suppressTimer);
+    suppressTimer = window.setTimeout(() => {
+      suppressClick = false;
+    }, 400);
+  }
+
+  function beginPinch(): void {
+    const list = [...points.values()];
+    if (list.length < 2) return;
+    const [a, b] = list;
+    pinchStartDistance = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    pinchStartScale = feedScale;
+    pinchStartOffset = feedOffsetX;
+    panning = false;
+    feed.classList.remove("is-panning");
+    for (const id of points.keys()) {
+      try {
+        feed.setPointerCapture(id);
+      } catch {
+        /* the pointer may already be gone */
+      }
+    }
+  }
+
+  feed.addEventListener("pointerdown", (event) => {
+    if (destroyed) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, video")) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (points.size >= 2) {
+      beginPinch();
+      event.preventDefault();
+      return;
+    }
+
+    if (feedScale > MIN_FEED_ZOOM + 0.001) {
+      panning = true;
+      panLastX = event.clientX;
+      panMoved = 0;
+      feed.classList.add("is-panning");
+      try {
+        feed.setPointerCapture(event.pointerId);
+      } catch {
+        /* synthetic pointers cannot be captured */
+      }
+    }
+  });
+
+  feed.addEventListener("pointermove", (event) => {
+    if (!points.has(event.pointerId)) return;
+    points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (points.size >= 2) {
+      const [a, b] = [...points.values()];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const next = Math.min(
+        MAX_FEED_ZOOM,
+        Math.max(MIN_FEED_ZOOM, pinchStartScale * (distance / pinchStartDistance)),
+      );
+      const pivot = (a.x + b.x) / 2 - feedCenterX();
+      const factor = next / pinchStartScale;
+      feedOffsetX = pivot * (1 - factor) + pinchStartOffset * factor;
+      feedScale = next;
+      clampFeedOffset();
+      applyFeedZoom(false);
+      suppressNextClick();
+      event.preventDefault();
+      return;
+    }
+
+    if (!panning) return;
+    const dx = event.clientX - panLastX;
+    panLastX = event.clientX;
+    if (dx === 0) return;
+    panFeed(dx);
+    panMoved += Math.abs(dx);
+    if (panMoved > 4) {
+      suppressNextClick();
+      event.preventDefault();
+    }
+  });
+
+  function endPointer(event: PointerEvent): void {
+    points.delete(event.pointerId);
+    try {
+      feed.releasePointerCapture(event.pointerId);
+    } catch {
+      /* already released */
+    }
+    const rest = [...points.values()][0];
+    if (rest) {
+      // One finger left after a pinch continues as a sideways pan.
+      panning = feedScale > MIN_FEED_ZOOM + 0.001;
+      if (panning) {
+        panLastX = rest.x;
+        panMoved = 0;
+      }
+      return;
+    }
+    panning = false;
+    pinchStartDistance = 0;
+    feed.classList.remove("is-panning");
+  }
+  feed.addEventListener("pointerup", endPointer);
+  feed.addEventListener("pointercancel", endPointer);
+
+  // Two fingers never scroll the page: the pinch owns that gesture. One
+  // finger still scrolls vertically (touch-action: pan-y on the feed).
+  feed.addEventListener(
+    "touchmove",
+    (event) => {
+      if (event.touches.length >= 2) event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  feed.addEventListener(
+    "click",
+    (event) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    true,
+  );
 
   // --- progress ----------------------------------------------------------
 
@@ -726,7 +1005,7 @@ export function openFeed(options: FeedOptions): FeedHandle {
     window.clearTimeout(timer);
     const item = items[index];
     if (!item) return;
-    const media = mediaFor(index);
+    const media = ensureMedia(index);
     if (!media) return;
 
     if (media instanceof HTMLVideoElement) {
@@ -781,24 +1060,36 @@ export function openFeed(options: FeedOptions): FeedHandle {
 
   // --- navigation --------------------------------------------------------
 
+  function scrollTopFor(i: number): number {
+    const slot = slots[Math.min(slots.length - 1, Math.max(0, i))];
+    if (!slot) return 0;
+    const feedTop = feed.getBoundingClientRect().top;
+    // Screen distances are scaled while the feed is zoomed; scrollTop is not.
+    const top =
+      (slot.getBoundingClientRect().top - feedTop) / feedScale + feed.scrollTop;
+    const max = Math.max(0, feed.scrollHeight - feed.clientHeight);
+    // Centre the item, so whatever its height it is the one under the middle.
+    const target = top - (feed.clientHeight - slot.offsetHeight) / 2;
+    return Math.min(max, Math.max(0, target));
+  }
+
   function scrollToIndex(next: number, smooth: boolean): void {
-    const clamped = Math.min(items.length - 1, Math.max(0, next));
     stopWheel();
-    feed.scrollTo({ top: clamped * feed.clientHeight, behavior: smooth ? "smooth" : "auto" });
+    const clamped = Math.min(items.length - 1, Math.max(0, next));
+    const top = scrollTopFor(clamped);
+    if (smooth) feed.scrollTo({ top, behavior: "smooth" });
+    else feed.scrollTop = top;
   }
 
   // --- smooth scrolling --------------------------------------------------
   //
-  // The feed used to jump a whole screen per wheel notch (CSS scroll-snap with
-  // `scroll-snap-stop: always`). Instead we drive the scroll ourselves with a
-  // short eased glide, so the wheel and the touchpad move continuously, and we
-  // settle on the nearest item once the wheel goes quiet.
+  // No snapping: a wheel notch glides a short distance and stops where it
+  // lands, so the next picture comes up gradually instead of replacing the
+  // screen. Trackpads already send small deltas and keep their own feel.
 
   let wheelTarget = 0;
   let wheelFrame = 0;
-  let wheelSettle = 0;
   let wheelGliding = false;
-  let wheelDirection = 1;
 
   function cancelFrame(): void {
     if (wheelFrame) cancelAnimationFrame(wheelFrame);
@@ -806,8 +1097,6 @@ export function openFeed(options: FeedOptions): FeedHandle {
   }
 
   function stopWheel(): void {
-    window.clearTimeout(wheelSettle);
-    wheelSettle = 0;
     wheelGliding = false;
     wheelTarget = feed.scrollTop;
     cancelFrame();
@@ -831,39 +1120,8 @@ export function openFeed(options: FeedOptions): FeedHandle {
     const step = () => {
       wheelFrame = 0;
       if (destroyed) return;
-      if (glideTo(wheelTarget, 0.22)) wheelFrame = requestAnimationFrame(step);
+      if (glideTo(wheelTarget, 0.24)) wheelFrame = requestAnimationFrame(step);
       else wheelGliding = false;
-    };
-    wheelFrame = requestAnimationFrame(step);
-  }
-
-  /** After the wheel stops, slide the rest of the way to the item it was heading for. */
-  function settleWheel(): void {
-    const height = feed.clientHeight || 1;
-    const last = Math.max(0, items.length - 1);
-    wheelGliding = false;
-    const raw = feed.scrollTop / height;
-    const base = Math.floor(raw);
-    const fraction = raw - base;
-    // A nudge of a third of a screen is enough to move on; less falls back,
-    // which is what makes a one-notch scroll feel like a page turn.
-    let target = base;
-    if (wheelDirection > 0 && fraction >= 0.3) target = base + 1;
-    if (wheelDirection < 0 && fraction > 0.7) target = base + 1;
-    const nearest = Math.min(last, Math.max(0, target)) * height;
-    wheelTarget = nearest;
-    if (Math.abs(feed.scrollTop - nearest) < 2) return;
-    const from = feed.scrollTop;
-    const start = performance.now();
-    const duration = 260;
-    const ease = (t: number) => 1 - Math.pow(1 - t, 3);
-    cancelFrame();
-    const step = (now: number) => {
-      if (destroyed) return;
-      const t = Math.min(1, (now - start) / duration);
-      feed.scrollTop = from + (nearest - from) * ease(t);
-      if (t < 1) wheelFrame = requestAnimationFrame(step);
-      else wheelFrame = 0;
     };
     wheelFrame = requestAnimationFrame(step);
   }
@@ -872,6 +1130,18 @@ export function openFeed(options: FeedOptions): FeedHandle {
     "wheel",
     (event: WheelEvent) => {
       if (destroyed) return;
+      // Ctrl + wheel is the feed zoom, handled above.
+      if (event.ctrlKey) return;
+      // While zoomed, a sideways trackpad swipe pans the enlarged feed.
+      if (
+        feedScale > MIN_FEED_ZOOM + 0.001 &&
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ) {
+        event.preventDefault();
+        stopWheel();
+        panFeed(-event.deltaX);
+        return;
+      }
       // Horizontal swipes belong to the trackpad, not the feed.
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
       event.preventDefault();
@@ -883,25 +1153,39 @@ export function openFeed(options: FeedOptions): FeedHandle {
         wheelGliding = true;
       }
       const raw = event.deltaY * unit;
-      // A mouse notch is ~120px, which would barely move the feed; a real
+      // A mouse notch is ~120px, which would barely move the feed; real
       // trackpad ticks are tiny, so they get only a small boost.
-      const scale = Math.abs(raw) >= 60 ? 2.5 : 1.15;
-      // A single notch should feel like a nudge, a fast spin like a throw.
+      const scale = Math.abs(raw) >= 60 ? 2 : 1.15;
       const delta = Math.max(
         -feed.clientHeight,
         Math.min(feed.clientHeight, raw * scale),
       );
-      wheelDirection = delta >= 0 ? 1 : -1;
       wheelTarget = Math.min(max, Math.max(0, wheelTarget + delta));
       runWheel();
-      window.clearTimeout(wheelSettle);
-      wheelSettle = window.setTimeout(settleWheel, 170);
     },
     { passive: false },
   );
 
-  function setIndex(next: number, fromScroll: boolean): void {
-    if (next === index) return;
+  /** The item under the middle of the screen is the active one. */
+  function visibleIndex(): number {
+    const rect = feed.getBoundingClientRect();
+    const center = rect.top + rect.height / 2;
+    let best = index;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < slots.length; i += 1) {
+      const box = slots[i].getBoundingClientRect();
+      if (box.bottom < rect.top || box.top > rect.bottom) continue;
+      const distance = Math.abs((box.top + box.bottom) / 2 - center);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  function setIndex(next: number): void {
+    if (next === index || next < 0 || next >= items.length) return;
     const previous = index;
     index = next;
     window.clearTimeout(timer);
@@ -916,8 +1200,7 @@ export function openFeed(options: FeedOptions): FeedHandle {
     captionTimer = window.setTimeout(() => caption.classList.remove("show"), 2600);
     const previousVideo = videoAt(previous);
     previousVideo?.pause();
-    mediaFor(index);
-    releaseFar(index);
+    ensureMedia(index);
     updateTracksButton();
     if (autoplayOn) startCurrent();
   }
@@ -926,10 +1209,8 @@ export function openFeed(options: FeedOptions): FeedHandle {
     window.clearTimeout(scrollTimer);
     scrollTimer = window.setTimeout(() => {
       if (destroyed) return;
-      const height = feed.clientHeight || 1;
-      const next = Math.round(feed.scrollTop / height);
-      if (next !== index) setIndex(next, true);
-    }, 90);
+      setIndex(visibleIndex());
+    }, 80);
   });
 
   feed.addEventListener("click", (event) => {
@@ -941,6 +1222,19 @@ export function openFeed(options: FeedOptions): FeedHandle {
 
   const onKey = (event: KeyboardEvent) => {
     if (destroyed) return;
+    // A details/sheet dialog on top of the feed owns the keyboard.
+    if (hasOverlay()) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("input, textarea, select")) return;
+    if ((event.ctrlKey || event.metaKey) && event.key === "0") {
+      event.preventDefault();
+      resetFeedZoom(true);
+      return;
+    }
+    if (target?.closest("button, video")) {
+      // Escape still closes; other keys belong to the focused control.
+      if (event.key !== "Escape") return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       destroy();
@@ -953,6 +1247,12 @@ export function openFeed(options: FeedOptions): FeedHandle {
     } else if (event.key === " ") {
       event.preventDefault();
       toggleAutoplay();
+    } else if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoomFeedTo(feedScale * 1.25, feedCenterX(), true);
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      zoomFeedTo(feedScale / 1.25, feedCenterX(), true);
     } else if (event.key.toLowerCase() === "i") {
       options.onInfo(items[index]);
     } else if (event.key.toLowerCase() === "o") {
@@ -969,15 +1269,51 @@ export function openFeed(options: FeedOptions): FeedHandle {
 
   // --- boot --------------------------------------------------------------
 
+  sizeAllFrames();
+
+  // Mount pictures one screen above and below; their boxes keep the layout
+  // steady while they are away.
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const i = Number((entry.target as HTMLElement).dataset.index);
+        if (!Number.isInteger(i)) continue;
+        if (entry.isIntersecting) ensureMedia(i);
+        else releaseSlot(i);
+      }
+    },
+    { root: feed, rootMargin: "120% 0px 120% 0px" },
+  );
+  for (const slot of slots) observer.observe(slot);
+
+  let resizeTimer = 0;
+  function relayout(): void {
+    if (destroyed) return;
+    const anchor = slots[index];
+    const feedTop = feed.getBoundingClientRect().top;
+    const before = anchor.getBoundingClientRect().top - feedTop;
+    sizeAllFrames();
+    const after = anchor.getBoundingClientRect().top - feedTop;
+    if (after !== before) feed.scrollTop += (after - before) / feedScale;
+    clampFeedOffset();
+    applyFeedZoom(false);
+  }
+  const onResize = () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(relayout, 120);
+  };
+  window.addEventListener("resize", onResize);
+
   caption.classList.add("show");
   captionTimer = window.setTimeout(() => caption.classList.remove("show"), 2800);
+  hintTimer = window.setTimeout(() => zoomHint.classList.add("hidden"), 7000);
   updateAutoplayButton();
   updateTracksButton();
-  mediaFor(start);
-  releaseFar(start);
+  ensureMedia(start);
   requestAnimationFrame(() => {
-    feed.scrollTop = start * feed.clientHeight;
-    if (autoplayOn) startCurrent();
+    feed.scrollTop = scrollTopFor(start);
+    // Opening a video should start it, like tapping a reel does on the phone.
+    if (autoplayOn || items[start]?.kind === "video") startCurrent();
   });
 
   let cleanupTimer = 0;
@@ -986,8 +1322,14 @@ export function openFeed(options: FeedOptions): FeedHandle {
     destroyed = true;
     window.clearTimeout(timer);
     window.clearTimeout(captionTimer);
+    window.clearTimeout(hintTimer);
     window.clearTimeout(scrollTimer);
     window.clearTimeout(cleanupTimer);
+    window.clearTimeout(resizeTimer);
+    window.clearTimeout(zoomTransition);
+    window.clearTimeout(suppressTimer);
+    window.removeEventListener("resize", onResize);
+    observer.disconnect();
     stopWheel();
     document.removeEventListener("keydown", onKey);
     document.body.classList.remove("feed-open");

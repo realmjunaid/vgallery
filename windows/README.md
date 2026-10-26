@@ -23,14 +23,18 @@ plain `std::fs`, and the UI is vanilla TypeScript — no React, no UI framework 
 
 - **Auto gallery** — point it at folders (Pictures, Videos, Desktop and Downloads on first
   run) and every photo and video shows up grouped folder-wise. Nothing to import.
-- **Reels-style vertical feed** — one item per screen, scroll-snapped, full resolution.
-  The wheel glides continuously and settles on the item it was heading for, so it feels
-  like the phone instead of jumping a screen per notch. Videos show a poster frame and
-  play when you tap them; images zoom with `Ctrl` + wheel (or double-click) and pan while
-  zoomed.
+- **Continuous photo feed** — the feed is a strip, not a pager: every picture keeps its own
+  shape and up to two fit on screen, so a small wheel nudge reveals the next one instead
+  of replacing the screen. Videos show a poster frame and play when you tap them.
+  Pinch (or `Ctrl` + wheel) zooms the **whole feed** from 1× to 10×, Google Drive
+  PDF-viewer style: every item grows together, double-click toggles 2×, a sideways drag
+  pans, and the feed keeps scrolling up and down at any zoom.
 - **Autoplay** — the play button walks the feed hands-free. Photos hold for 1–15 seconds
   (Settings › Playback); videos, GIFs and animated images play for their own duration.
-  The item being played stays in the middle and the next one glides up into it.
+  The item under the middle of the screen is the active one.
+- **Settings › About** — *About VGallery* (version, features, privacy), *About Developer*
+  (M Junaid, website, source and issues) and *Check for updates*, which asks GitHub for the
+  newest release and only offers it when that release ships a Windows `.exe` or `.msi`.
 - **Photos & Videos tabs** — stills in one, everything that plays in the other.
 - **Grid or list** — switch per folder; sort by name (natural order, so `1(2).png` before
   `1(10).png`) or newest first.
@@ -50,7 +54,8 @@ plain `std::fs`, and the UI is vanilla TypeScript — no React, no UI framework 
   The full-screen feed is black in every theme.
 - **The same logo as Android** — the exe, taskbar and installer icons are generated from
   the Android launcher logo (`make-icon.ps1`), so both apps read as VGallery.
-- **Offline by design** — no account, no analytics, no uploads, no network calls.
+- **Offline by design** — no account, no analytics, no uploads. The only online moment is
+  the update check you ask for yourself; skip it and the app never touches the network.
 
 ## Subtitles & audio tracks
 
@@ -141,7 +146,7 @@ windows/
 │  │  ├─ thumbnails.ts     # lazily loaded, Rust-generated thumbnails
 │  │  └─ dom.ts            # tiny DOM helpers, dialogs, toasts
 │  └─ views/
-│     ├─ feed.ts           # the scroll-snapped viewer, autoplay, subtitles + audio tracks
+│     ├─ feed.ts           # the continuous feed, zoom, autoplay, tracks
 │     ├─ settings.ts
 │     └─ trash.ts
 └─ src-tauri/
@@ -162,7 +167,8 @@ moved, not copied, into the Trash folder).
 
 ## Not in 0.1.0 yet
 
-- Built-in updater (the Android app has one; Windows will get a signed release check).
+- Built-in installer updater — the check and download link work, but the setup still runs
+  from the downloaded `.exe`/`.msi` rather than installing itself.
 - Switching audio/subtitle tracks that are muxed inside an MP4/MKV (use sidecar files —
   see [Subtitles & audio tracks](#subtitles--audio-tracks)).
 - Video thumbnails from arbitrary codecs (poster frames come from WebView2's own decoder).

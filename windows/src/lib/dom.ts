@@ -78,6 +78,43 @@ export interface DialogAction {
   primary?: boolean;
 }
 
+let overlaySeq = 0;
+
+function focusablesIn(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter((node) => node.offsetParent !== null || node === document.activeElement);
+}
+
+/** Keep Tab inside a modal, the way a native Windows dialog behaves. */
+function trapTab(root: HTMLElement, event: KeyboardEvent): void {
+  if (event.key !== "Tab") return;
+  const items = focusablesIn(root);
+  if (items.length === 0) {
+    event.preventDefault();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement as HTMLElement | null;
+  if (event.shiftKey && (active === first || !root.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (active === last || !root.contains(active))) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function restoreFocus(node: HTMLElement | null): void {
+  if (!node || !node.isConnected) return;
+  try {
+    node.focus({ preventScroll: true });
+  } catch {
+    /* the original control is gone with its view */
+  }
+}
+
 export function askDialog(options: {
   title: string;
   body?: Node | string;
@@ -86,19 +123,24 @@ export function askDialog(options: {
 }): Promise<boolean> {
   const root = document.getElementById("overlay-root") ?? document.body;
   return new Promise((resolve) => {
+    const previous = document.activeElement as HTMLElement | null;
+    const titleId = `dialog-title-${(overlaySeq += 1)}`;
     let settled = false;
     const finish = (value: boolean) => {
       if (settled) return;
       settled = true;
       document.removeEventListener("keydown", onKey);
       backdrop.remove();
+      restoreFocus(previous);
       resolve(value);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") finish(options.onDismissValue ?? false);
-      if (event.key === "Enter") {
-        const primary = options.actions.find((action) => action.primary);
-        if (primary) finish(primary.value);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(options.onDismissValue ?? false);
+      } else {
+        trapTab(dialog, event);
       }
     };
     const buttons = options.actions.map((action) =>
@@ -114,8 +156,8 @@ export function askDialog(options: {
     );
     const dialog = h(
       "div",
-      { class: "dialog", role: "dialog", "aria-modal": "true" },
-      h("h2", { class: "dialog-title" }, options.title),
+      { class: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId },
+      h("h2", { class: "dialog-title", id: titleId }, options.title),
       options.body ? h("div", { class: "dialog-body" }, options.body) : null,
       h("div", { class: "dialog-actions" }, ...buttons),
     );
@@ -131,9 +173,15 @@ export function askDialog(options: {
     );
     document.addEventListener("keydown", onKey);
     root.append(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add("show"));
     const primary = backdrop.querySelector<HTMLButtonElement>(".btn-primary");
-    primary?.focus();
+    (primary ?? buttons[0])?.focus({ preventScroll: true });
   });
+}
+
+/** True while a dialog or sheet owns the screen. */
+export function hasOverlay(): boolean {
+  return document.querySelector(".modal-backdrop") !== null;
 }
 
 /** A modal that owns arbitrary content. Returns close() and the content node. */
@@ -143,6 +191,8 @@ export function openSheet(
   options: { wide?: boolean } = {},
 ): () => void {
   const root = document.getElementById("overlay-root") ?? document.body;
+  const previous = document.activeElement as HTMLElement | null;
+  const titleId = `sheet-title-${(overlaySeq += 1)}`;
   let closed = false;
   const close = () => {
     if (closed) return;
@@ -150,14 +200,33 @@ export function openSheet(
     document.removeEventListener("keydown", onKey);
     backdrop.classList.remove("show");
     window.setTimeout(() => backdrop.remove(), 160);
+    restoreFocus(previous);
   };
   const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") close();
+    // A confirmation dialog on top of this sheet owns Escape until it closes.
+    if (document.querySelectorAll(".modal-backdrop").length > 1) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    } else {
+      trapTab(dialog, event);
+    }
   };
   const dialog = h(
     "div",
-    { class: `sheet ${options.wide ? "sheet-wide" : ""}`.trim(), role: "dialog", "aria-modal": "true" },
-    h("div", { class: "sheet-head" }, h("h2", {}, title), iconButton("close", "Close", close)),
+    {
+      class: `sheet ${options.wide ? "sheet-wide" : ""}`.trim(),
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-labelledby": titleId,
+      tabindex: "-1",
+    },
+    h(
+      "div",
+      { class: "sheet-head" },
+      h("h2", { id: titleId }, title),
+      iconButton("close", "Close", close),
+    ),
     build(close),
   );
   const backdrop = h(
@@ -173,5 +242,6 @@ export function openSheet(
   document.addEventListener("keydown", onKey);
   root.append(backdrop);
   requestAnimationFrame(() => backdrop.classList.add("show"));
+  dialog.focus({ preventScroll: true });
   return close;
 }

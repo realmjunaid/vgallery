@@ -98,6 +98,24 @@ button {
   cursor: pointer;
 }
 
+button:disabled,
+.btn:disabled,
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+}
+
+/* One consistent Windows-style focus ring everywhere. */
+:where(button, [role="button"], a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+:where(.dialog, .sheet):focus {
+  outline: none;
+}
+
 ::selection {
   background: var(--accent-soft);
 }
@@ -1019,10 +1037,12 @@ button {
 .btn-primary {
   background: var(--accent);
   color: #fff;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 .btn-primary:hover {
   background: color-mix(in srgb, var(--accent) 86%, #000);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
 .btn-danger {
@@ -1079,12 +1099,24 @@ button {
 }
 
 .settings-section > h2 {
-  margin: 0 0 9px 4px;
-  color: var(--text-3);
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px 4px;
+  color: var(--text-2);
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.settings-section > h2::before {
+  content: "";
+  width: 3px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .card {
@@ -1129,6 +1161,70 @@ button {
 
 .setting-control {
   flex: 0 0 auto;
+}
+
+/* A whole row that opens a page or a sheet, like the Android click items. */
+.setting-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.setting-link:last-child {
+  border-bottom: 0;
+}
+
+.setting-link:hover {
+  background: var(--surface-2);
+}
+
+.setting-link-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.setting-link-main > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.setting-link > svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+
+/* The block that follows the last link already draws the divider. */
+.setting-link + .setting-block,
+.card > .setting-block:first-child {
+  border-top: 0;
+}
+
+.update-state {
+  margin: 10px 0 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.update-state.ok {
+  color: var(--accent);
+}
+
+.update-state.warn {
+  color: var(--text-2);
 }
 
 .card-note {
@@ -1299,6 +1395,17 @@ body[data-theme="light"] .segment.active {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-2);
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.root-row:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.root-row > svg {
+  color: var(--accent);
+  opacity: 0.8;
 }
 
 .root-path {
@@ -1352,6 +1459,105 @@ body[data-theme="light"] .segment.active {
   color: var(--text-2);
   font-size: 12.5px;
   line-height: 1.6;
+}
+
+/* About sheets: same content as the phone's About pages. */
+.about-sheet-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.about-sheet-brand > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.about-sheet-brand h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.about-sheet-brand p {
+  margin: 1px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.about-bullet {
+  display: flex;
+  gap: 11px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+}
+
+.about-bullet > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.about-bullet h4 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.about-bullet p {
+  margin: 2px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.about-links {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.sheet-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sheet-link:last-child {
+  border-bottom: 0;
+}
+
+.sheet-link > svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+
+.sheet-link-copy h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 0.14s ease;
+}
+
+.sheet-link-copy p {
+  margin: 2px 0 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.sheet-link:hover .sheet-link-copy h4 {
+  color: var(--accent);
 }
 
 .settings-footer {
@@ -1783,6 +1989,7 @@ body[data-theme="light"] .toast {
   inset: 0;
   z-index: 60;
   display: flex;
+  overflow: hidden;
   background: #000;
   color: #fff;
   animation: feedIn 0.18s ease;
@@ -1868,6 +2075,50 @@ body[data-theme="light"] .toast {
   white-space: nowrap;
 }
 
+/* The one-time zoom hint; the badge replaces it once the feed is magnified. */
+.feed-zoom-hint {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  animation: hintIn 0.3s ease both;
+}
+
+@keyframes hintIn {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Zoom level appears only while the feed is magnified; click returns to fit. */
+.feed-zoom {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.feed-zoom:hover {
+  background: color-mix(in srgb, var(--accent) 36%, transparent);
+  border-color: var(--accent);
+}
+
 .feed-top .icon-btn {
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
@@ -1918,6 +2169,20 @@ video.feed-media::cue {
   outline: none;
   scrollbar-width: none;
   overscroll-behavior: contain;
+  /* One finger scrolls; two fingers pinch the whole feed. */
+  touch-action: pan-y;
+  transform-origin: center center;
+}
+
+/* Global zoom, Drive PDF-viewer style: the whole feed layer scales, so every
+   visible item grows together and the feed still scrolls while zoomed. */
+.feed.is-zoomed {
+  cursor: grab;
+  will-change: transform;
+}
+
+.feed.is-zoomed.is-panning {
+  cursor: grabbing;
 }
 
 .feed::-webkit-scrollbar {
@@ -1925,21 +2190,38 @@ video.feed-media::cue {
 }
 
 .feed-track {
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 0 92px;
 }
 
+/* A continuous strip: every item keeps the size of its picture, so several
+   can share the screen and the next one peeks in while you scroll. */
 .feed-item {
   position: relative;
-  height: 100%;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 9px 18px;
+  touch-action: pan-y;
+}
+
+.feed-frame {
+  position: relative;
+  flex: none;
   overflow: hidden;
+  border-radius: 16px;
+  background: #0a0a0c;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
 }
 
 .feed-media {
-  max-width: 100%;
-  max-height: 100%;
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   transform-origin: center center;
   user-select: none;
@@ -1949,10 +2231,6 @@ video.feed-media::cue {
 
 video.feed-media {
   background: #000;
-}
-
-.feed-item.is-zoomed {
-  cursor: grab;
 }
 
 .feed-play {
@@ -2097,6 +2375,9 @@ video.feed-media {
 -------------------------------------------------------------------------- */
 
 @media (max-width: 1040px) {
+  .feed-zoom-hint {
+    display: none;
+  }
   .brand-copy p {
     display: none;
   }

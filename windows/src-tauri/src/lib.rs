@@ -41,6 +41,20 @@ fn kind_for(ext: &str) -> Option<&'static str> {
     }
 }
 
+/// Read just the picture header (not the pixels) so the feed knows the shape
+/// of every item before it loads. Videos report `(0, 0)` until the player
+/// itself reports its size.
+fn dimensions_for(path: &Path, kind: &str) -> (u32, u32) {
+    if kind == "video" {
+        return (0, 0);
+    }
+    image::ImageReader::open(path)
+        .ok()
+        .and_then(|reader| reader.with_guessed_format().ok())
+        .and_then(|reader| reader.into_dimensions().ok())
+        .unwrap_or((0, 0))
+}
+
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaItem {
@@ -53,6 +67,10 @@ pub struct MediaItem {
     pub kind: String,
     pub size: u64,
     pub modified: u64,
+    /// Pixel size of the picture, so the feed can reserve its box before the
+    /// image has loaded. `0` when it is a video or the header cannot be read.
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -252,6 +270,7 @@ fn scan_blocking(app: &AppHandle) -> Result<Library, String> {
                 .unwrap_or_else(|| path_str.clone());
 
             total_size = total_size.saturating_add(meta.len());
+            let (width, height) = dimensions_for(path, kind);
             folders.entry(parent.to_path_buf()).or_default().push(MediaItem {
                 id: path_str.clone(),
                 path: path_str,
@@ -262,6 +281,8 @@ fn scan_blocking(app: &AppHandle) -> Result<Library, String> {
                 kind: kind.to_string(),
                 size: meta.len(),
                 modified,
+                width,
+                height,
             });
         }
     }
@@ -387,6 +408,9 @@ fn trash_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Matches the "restorable for 30 days" text in the app.
+const TRASH_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
+
 fn manifest_path(dir: &Path) -> PathBuf {
     dir.join("trash.json")
 }
@@ -473,16 +497,29 @@ fn trash_items_blocking(app: &AppHandle, paths: Vec<String>) -> Result<usize, St
 fn list_trash_blocking(app: &AppHandle) -> Result<Vec<TrashEntry>, String> {
     let dir = trash_dir(app)?;
     let entries = read_manifest(&dir);
-    let before = entries.len();
-    let mut kept: Vec<TrashEntry> = entries
-        .into_iter()
-        .filter(|entry| Path::new(&entry.stored).is_file())
-        .collect();
-    if kept.len() != before {
+    let now = now_secs();
+    let mut kept: Vec<TrashEntry> = Vec::with_capacity(entries.len());
+    let mut changed = false;
+    for entry in entries {
+        let stored = Path::new(&entry.stored);
+        if !stored.is_file() {
+            // The file was removed outside the app; drop the stale manifest row.
+            changed = true;
+            continue;
+        }
+        // "Restorable for 30 days" is a promise, so expired rows leave for good.
+        if now.saturating_sub(entry.trashed_at) > TRASH_RETENTION_SECS {
+            let _ = fs::remove_file(stored);
+            changed = true;
+            continue;
+        }
+        kept.push(entry);
+    }
+    if changed {
         write_manifest(&dir, &kept)?;
     }
     kept.sort_by(|a, b| b.trashed_at.cmp(&a.trashed_at));
-    Ok(std::mem::take(&mut kept))
+    Ok(kept)
 }
 
 fn restore_trash_blocking(app: &AppHandle, ids: Vec<String>) -> Result<usize, String> {
@@ -910,6 +947,7 @@ fn media_item(path: &Path, meta: &fs::Metadata, folder_name: &str) -> Option<Med
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_else(|| path_str.clone());
+    let (width, height) = dimensions_for(path, kind);
     Some(MediaItem {
         id: path_str.clone(),
         path: path_str,
@@ -920,6 +958,8 @@ fn media_item(path: &Path, meta: &fs::Metadata, folder_name: &str) -> Option<Med
         kind: kind.to_string(),
         size: meta.len(),
         modified,
+        width,
+        height,
     })
 }
 
