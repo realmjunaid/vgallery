@@ -4,7 +4,7 @@
 [VGallery](../README.md), written in **Rust + Tauri** instead of Kotlin. Same idea, same
 black-and-violet look, much smaller footprint than a JVM app.
 
-> Status: **0.1.0.** The gallery, folder grouping, grid/list, full-screen feed,
+> Status: **1.0.0.** The gallery, folder grouping, grid/list, full-screen feed,
 > autoplay, Trash and Settings are in. Native OS integration is intentionally small.
 
 ## Why Rust + Tauri?
@@ -166,7 +166,7 @@ windows/
 Nothing is copied out of your folders except thumbnails and files you delete (which are
 moved, not copied, into the Trash folder).
 
-## Not in 0.1.0 yet
+## Not in 1.0.0 yet
 
 - Built-in installer updater — the check and download link work, but the setup still runs
   from the downloaded `.exe`/`.msi` rather than installing itself.

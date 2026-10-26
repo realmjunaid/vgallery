@@ -358,7 +358,7 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
     void openUrl(url).catch((error) => toast(String(error), "error"));
   };
 
-  const version = ctx.info?.version ?? "0.1.0";
+  const version = ctx.info?.version ?? "1.0.0";
   const updateActions = h("div", { class: "inline-actions" });
   const updateNote = h(
     "p",

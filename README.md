@@ -7,7 +7,7 @@ VGallery is a free, **offline-first** photo & video gallery for **Android** and 
   <a href="https://github.com/realmjunaid/vgallery/releases/latest">
     <img src="https://img.shields.io/badge/Download-Android_APK-7C3AED?style=for-the-badge&logo=android&logoColor=white" alt="Download Android APK">
   </a>
-  <a href="https://github.com/realmjunaid/vgallery/releases/tag/v0.1.0-windows">
+  <a href="https://github.com/realmjunaid/vgallery/releases/tag/v1.0.0">
     <img src="https://img.shields.io/badge/Download-Windows_Setup-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows Installer">
   </a>
 </p>
@@ -41,11 +41,11 @@ VGallery is a free, **offline-first** photo & video gallery for **Android** and 
 3. Install and allow photo access.
 
 ### Windows
-**Recommended:** Download the installer from the [Windows release](https://github.com/realmjunaid/vgallery/releases/tag/v0.1.0-windows)
+**Recommended:** Download the installer from the [Windows release](https://github.com/realmjunaid/vgallery/releases/tag/v1.0.0)
 
-Or go to Releases → look for "VGallery for Windows 0.1.0"
+Or go to Releases → look for "VGallery for Windows 1.0.0"
 
-> **Note:** Windows is at version **0.1.0**. The experience matches the Android app closely, including the continuous feed and global zoom.
+> **Note:** Windows is at version **1.0.0**. The experience matches the Android app closely, including the continuous feed and global zoom.
 
 If no Windows installer is attached yet, build it yourself (see below).
 
@@ -76,7 +76,7 @@ npm install
 npx tauri build
 ```
 The installer will be in:
-`windows\src-tauri\target\release\bundle\nsis\VGallery_0.1.0_x64-setup.exe`
+`windows\src-tauri\target\release\bundle\nsis\VGallery_1.0.0_x64-setup.exe`
 
 ### Android
 ```bash

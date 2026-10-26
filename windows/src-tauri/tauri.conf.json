@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "VGallery",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "me.mjunaid.vgallery",
   "build": {
     "beforeDevCommand": "npm run dev",
