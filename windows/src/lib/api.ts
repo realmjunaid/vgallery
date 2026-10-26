@@ -107,6 +107,16 @@ export const emptyTrash = (): Promise<number> => invoke<number>("empty_trash");
 export const revealInExplorer = (path: string): Promise<void> => invoke<void>("reveal_in_explorer", { path });
 export const openExternal = (path: string): Promise<void> => invoke<void>("open_external", { path });
 export const openUrl = (url: string): Promise<void> => invoke<void>("open_url", { url });
+
+export interface UpdateProgress {
+  received: number;
+  total: number;
+  phase: "downloading" | "installing";
+}
+
+/** Download the official installer and let it replace this app. The process exits on success. */
+export const installWindowsUpdate = (url: string): Promise<void> =>
+  invoke<void>("install_windows_update", { url });
 export const listVideoTracks = (path: string): Promise<VideoTracks> =>
   invoke<VideoTracks>("list_video_tracks", { path });
 /** Returns WebVTT text; `.srt` sidecars are converted in Rust. */

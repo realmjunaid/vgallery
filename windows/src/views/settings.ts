@@ -1,11 +1,20 @@
-import { openUrl, revealInExplorer, type AppInfo, type Library } from "../lib/api";
+import { listen } from "@tauri-apps/api/event";
+import {
+  inTauri,
+  installWindowsUpdate,
+  openUrl,
+  revealInExplorer,
+  type AppInfo,
+  type Library,
+  type UpdateProgress,
+} from "../lib/api";
 import { askDialog, h, iconButton, openSheet, toast } from "../lib/dom";
 import { formatBytes, plural } from "../lib/format";
 import { icon, type IconName } from "../lib/icons";
 import { ACCENTS, clampSeconds, type AccentName, type Settings, type ThemeMode } from "../lib/settings";
 
 const UPDATE_REPO = "realmjunaid/vgallery";
-const RELEASES_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
+const RELEASES_API = `https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=100`;
 const SOURCE_URL = `https://github.com/${UPDATE_REPO}`;
 const ISSUES_URL = `${SOURCE_URL}/issues`;
 const DEVELOPER_URL = "https://mjunaid.me";
@@ -33,6 +42,10 @@ function versionParts(value: string): number[] {
   return parts;
 }
 
+function displayVersion(tag: string): string {
+  return tag.trim().replace(/^v/i, "").replace(/-windows$/i, "");
+}
+
 function isNewerVersion(remote: string, local: string): boolean {
   const a = versionParts(remote);
   const b = versionParts(local);
@@ -42,27 +55,40 @@ function isNewerVersion(remote: string, local: string): boolean {
   return false;
 }
 
-/** The newest GitHub release, only offered when it ships a Windows installer. */
+function pickInstaller(assets: ReleaseAsset[]): ReleaseAsset | null {
+  const exes = assets.filter((entry) => /\.exe$/i.test(entry.name));
+  return (
+    exes.find((entry) => /x64-setup\.exe$/i.test(entry.name)) ??
+    exes.find((entry) => /setup\.exe$/i.test(entry.name)) ??
+    exes.find((entry) => /vgallery/i.test(entry.name)) ??
+    null
+  );
+}
+
+/** Newest GitHub release that actually ships a Windows installer. Android APKs are ignored. */
 async function fetchLatestWindowsRelease(signal?: AbortSignal): Promise<WindowsRelease | null> {
   const response = await fetch(RELEASES_API, {
-    headers: { Accept: "application/vnd.github+json" },
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "VGallery" },
     signal,
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`GitHub answered ${response.status}. Try again later.`);
-  const data = (await response.json()) as {
+  const data = (await response.json()) as Array<{
     tag_name?: string;
     html_url?: string;
     assets?: ReleaseAsset[];
-  };
-  const tag = String(data.tag_name ?? "").trim();
-  if (!tag) return null;
-  const assets = Array.isArray(data.assets) ? data.assets : [];
-  // Android publishes APKs to the same repo; never offer one to a Windows PC.
-  const windows = assets.filter((entry) => /\.(exe|msi)$/i.test(entry.name));
-  const preferred =
-    windows.find((entry) => /(win|x64|setup)/i.test(entry.name)) ?? windows[0] ?? null;
-  return { tag, url: data.html_url ?? `${SOURCE_URL}/releases`, asset: preferred };
+  }>;
+  if (!Array.isArray(data)) return null;
+  let best: WindowsRelease | null = null;
+  for (const entry of data) {
+    const tag = String(entry.tag_name ?? "").trim();
+    const asset = pickInstaller(Array.isArray(entry.assets) ? entry.assets : []);
+    if (!tag || !asset) continue;
+    if (!best || isNewerVersion(tag, best.tag)) {
+      best = { tag, url: entry.html_url ?? `${SOURCE_URL}/releases`, asset };
+    }
+  }
+  return best;
 }
 
 export interface SettingsContext {
@@ -358,8 +384,20 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
     void openUrl(url).catch((error) => toast(String(error), "error"));
   };
 
-  const version = ctx.info?.version ?? "1.0.0";
+  const version = ctx.info?.version ?? "1.0.1";
   const updateActions = h("div", { class: "inline-actions" });
+  const updateBar = h("div", { class: "update-progress-bar" });
+  const updateProgress = h(
+    "div",
+    {
+      class: "update-progress hidden",
+      role: "progressbar",
+      "aria-valuemin": "0",
+      "aria-valuemax": "100",
+      "aria-valuenow": "0",
+    },
+    updateBar,
+  );
   const updateNote = h(
     "p",
     { class: "update-state", role: "status", "aria-live": "polite" },
@@ -378,6 +416,63 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
     updateNote.textContent = text;
     updateNote.className = `update-state ${kind}`.trim();
   };
+  const setProgress = (pct: number) => {
+    const next = Math.max(0, Math.min(100, pct));
+    updateBar.style.width = `${next}%`;
+    updateProgress.setAttribute("aria-valuenow", String(Math.round(next)));
+  };
+  const setActionsEnabled = (enabled: boolean) => {
+    updateActions.querySelectorAll("button").forEach((button) => {
+      button.disabled = !enabled;
+    });
+  };
+
+  async function installInApp(asset: ReleaseAsset, tag: string): Promise<void> {
+    if (updateBusy) return;
+    if (!inTauri()) {
+      toast("Updates install inside the Windows app.", "error");
+      return;
+    }
+    updateBusy = true;
+    setActionsEnabled(false);
+    updateProgress.classList.remove("hidden", "indeterminate");
+    setProgress(0);
+    setUpdateNote(`Downloading ${displayVersion(tag)}…`);
+    let unlisten: (() => void) | null = null;
+    try {
+      unlisten = await listen<UpdateProgress>("vgallery:update-progress", (event) => {
+        const { received, total, phase } = event.payload;
+        if (phase === "installing") {
+          updateProgress.classList.remove("indeterminate");
+          setProgress(100);
+          setUpdateNote("Installing… VGallery will close and reopen on its own.");
+          return;
+        }
+        if (total > 0) {
+          updateProgress.classList.remove("indeterminate");
+          const pct = Math.min(99, Math.round((received / total) * 100));
+          setProgress(pct);
+          setUpdateNote(
+            `Downloading ${displayVersion(tag)}… ${pct}% · ${formatBytes(received)} of ${formatBytes(total)}`,
+          );
+        } else {
+          updateProgress.classList.add("indeterminate");
+          setUpdateNote(`Downloading ${displayVersion(tag)}… ${formatBytes(received)}`);
+        }
+      });
+      await installWindowsUpdate(asset.browser_download_url);
+      setUpdateNote("Installing… VGallery will close and reopen on its own.");
+    } catch (error) {
+      updateProgress.classList.add("hidden");
+      const message = error instanceof Error ? error.message : String(error);
+      setUpdateNote(message, "warn");
+      toast(message, "error");
+      updateBusy = false;
+      setActionsEnabled(true);
+    } finally {
+      unlisten?.();
+    }
+  }
 
   checkButton.addEventListener("click", async () => {
     if (updateBusy) return;
@@ -390,23 +485,19 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
     const timeout = window.setTimeout(() => controller.abort(), 12_000);
     try {
       const release = await fetchLatestWindowsRelease(controller.signal);
-      if (!release) {
-        setUpdateNote("No releases are published yet — this build is still a preview.", "warn");
-        return;
-      }
-      if (!release.asset) {
-        setUpdateNote(
-          `The newest release (${release.tag}) has no Windows installer yet. The Android build is published there, so Windows stays on ${version}.`,
-          "warn",
-        );
+      if (!release?.asset) {
+        setUpdateNote("No Windows release is published yet.", "warn");
         return;
       }
       if (!isNewerVersion(release.tag, version)) {
         setUpdateNote(`You're up to date — ${version} is the newest Windows build.`, "ok");
         return;
       }
-      setUpdateNote(`Version ${release.tag} is ready for Windows.`, "ok");
       const asset = release.asset;
+      setUpdateNote(
+        `Version ${displayVersion(release.tag)} is ready. Update downloads it here and restarts VGallery.`,
+        "ok",
+      );
       updateActions.replaceChildren(
         checkButton,
         h(
@@ -414,13 +505,10 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
           {
             class: "btn btn-primary",
             type: "button",
-            onclick: () =>
-              void openUrl(asset.browser_download_url).catch((error) =>
-                toast(String(error), "error"),
-              ),
+            onclick: () => void installInApp(asset, release.tag),
           },
           icon("download", 17),
-          "Download",
+          "Update",
         ),
         h(
           "button",
@@ -453,14 +541,15 @@ export function renderSettings(container: HTMLElement, ctx: SettingsContext): vo
       h(
         "div",
         { class: "setting-copy" },
-        h("h3", {}, "Windows releases"),
+        h("h3", {}, "Windows updates"),
         h(
           "p",
           {},
-          "Downloaded from GitHub. A release is offered only when it includes a Windows .exe or .msi.",
+          "A newer release downloads inside VGallery, installs itself, and restarts the app. Nothing to run by hand.",
         ),
       ),
       updateActions,
+      updateProgress,
       updateNote,
     ),
   );

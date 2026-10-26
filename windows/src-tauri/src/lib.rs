@@ -2,7 +2,7 @@
 //!
 //! Everything here is local: we walk the folders the user pointed at, hand the
 //! UI a flat list of media, cache thumbnails, and move deletions into a
-//! restorable trash. No network calls, no telemetry.
+//! restorable trash. The only network call is an update the user asks for.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -15,6 +15,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::{DirEntry, WalkDir};
+
+mod update;
 
 // ---------------------------------------------------------------------------
 // Media catalogue
@@ -1290,6 +1292,13 @@ async fn read_subtitle(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn install_windows_update(app: AppHandle, url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || update::install_blocking(&app, &url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn app_info(app: AppHandle) -> AppInfo {
     AppInfo {
         version: app.package_info().version.to_string(),
@@ -1352,6 +1361,7 @@ pub fn run() {
             open_url,
             list_video_tracks,
             read_subtitle,
+            install_windows_update,
             app_info,
         ])
         .run(tauri::generate_context!())

@@ -4,7 +4,7 @@
 [VGallery](../README.md), written in **Rust + Tauri** instead of Kotlin. Same idea, same
 black-and-violet look, much smaller footprint than a JVM app.
 
-> Status: **1.0.0.** The gallery, folder grouping, grid/list, full-screen feed,
+> Status: **1.0.1.** The gallery, folder grouping, grid/list, full-screen feed,
 > autoplay, Trash and Settings are in. Native OS integration is intentionally small.
 
 ## Why Rust + Tauri?
@@ -55,8 +55,10 @@ plain `std::fs`, and the UI is vanilla TypeScript — no React, no UI framework 
   The full-screen feed is black in every theme.
 - **The same logo as Android** — the exe, taskbar and installer icons are generated from
   the Android launcher logo (`make-icon.ps1`), so both apps read as VGallery.
+- **In-app updates** — Settings › Check for updates downloads a newer Windows release
+  inside the app, installs it, and restarts. Nothing lands in Downloads for you to run.
 - **Offline by design** — no account, no analytics, no uploads. The only online moment is
-  the update check you ask for yourself; skip it and the app never touches the network.
+  an update you ask for yourself; skip it and the app never touches the network.
 
 ## Subtitles & audio tracks
 
@@ -166,10 +168,8 @@ windows/
 Nothing is copied out of your folders except thumbnails and files you delete (which are
 moved, not copied, into the Trash folder).
 
-## Not in 1.0.0 yet
+## Not in 1.0.1 yet
 
-- Built-in installer updater — the check and download link work, but the setup still runs
-  from the downloaded `.exe`/`.msi` rather than installing itself.
 - Switching audio/subtitle tracks that are muxed inside an MP4/MKV (use sidecar files —
   see [Subtitles & audio tracks](#subtitles--audio-tracks)).
 - Video thumbnails from arbitrary codecs (poster frames come from WebView2's own decoder).

@@ -1227,6 +1227,36 @@ button:disabled,
   color: var(--text-2);
 }
 
+.update-progress {
+  height: 4px;
+  margin: 12px 0 0;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+
+.update-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+
+.update-progress.indeterminate .update-progress-bar {
+  width: 36%;
+  animation: update-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes update-slide {
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
 .card-note {
   display: flex;
   align-items: center;
