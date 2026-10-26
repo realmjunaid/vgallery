@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use walkdir::{DirEntry, WalkDir};
 
 // ---------------------------------------------------------------------------
@@ -58,6 +58,15 @@ pub struct MediaItem {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderEntry {
+    pub name: String,
+    pub path: String,
+    pub items: Vec<MediaItem>,
+}
+
+/// One folder, read on demand when a file is opened from Explorer.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderScan {
     pub name: String,
     pub path: String,
     pub items: Vec<MediaItem>,
@@ -879,6 +888,170 @@ fn open_url_blocking(url: &str) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// One folder, on demand (Explorer "Open with")
+// ---------------------------------------------------------------------------
+
+fn media_item(path: &Path, meta: &fs::Metadata, folder_name: &str) -> Option<MediaItem> {
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    let kind = kind_for(&ext)?;
+    let path_str = path.to_string_lossy().to_string();
+    let parent = path.parent()?;
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|dur| dur.as_secs())
+        .unwrap_or(0);
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| path_str.clone());
+    Some(MediaItem {
+        id: path_str.clone(),
+        path: path_str,
+        name,
+        folder: folder_name.to_string(),
+        folder_path: parent.to_string_lossy().to_string(),
+        ext,
+        kind: kind.to_string(),
+        size: meta.len(),
+        modified,
+    })
+}
+
+fn scan_folder_blocking(target: &str) -> Result<FolderScan, String> {
+    let target = PathBuf::from(target);
+    let dir = if target.is_dir() {
+        target.clone()
+    } else {
+        target
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| "That file has no folder.".to_string())?
+    };
+    if !dir.is_dir() {
+        return Err("That folder is no longer there.".to_string());
+    }
+    let name = dir
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| dir.display().to_string());
+
+    let mut items: Vec<MediaItem> = Vec::new();
+    let entries = fs::read_dir(&dir).map_err(|e| format!("Could not read that folder: {e}"))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        if let Some(item) = media_item(&path, &meta, &name) {
+            items.push(item);
+        }
+    }
+    items.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(FolderScan {
+        name,
+        path: dir.to_string_lossy().to_string(),
+        items,
+    })
+}
+
+fn is_media_arg(arg: &str) -> Option<String> {
+    if arg.starts_with('-') {
+        return None;
+    }
+    let path = PathBuf::from(arg);
+    if !path.is_file() {
+        return None;
+    }
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    if kind_for(&ext).is_none() {
+        return None;
+    }
+    Some(path.to_string_lossy().to_string())
+}
+
+fn first_media_arg<'a>(args: impl IntoIterator<Item = &'a String>) -> Option<String> {
+    args.into_iter().find_map(|arg| is_media_arg(arg))
+}
+
+// ---------------------------------------------------------------------------
+// Explorer integration ("Open with VGallery")
+// ---------------------------------------------------------------------------
+
+/// Registers the app for every image and video extension in the per-user
+/// registry, so it shows up under Explorer's *Open with* without admin rights
+/// and without touching anyone's default app. Runs on each release launch, so
+/// moving the exe keeps the command path correct.
+#[cfg(all(windows, not(debug_assertions)))]
+fn register_file_associations() {
+    if let Err(error) = register_file_associations_inner() {
+        eprintln!("VGallery: could not register the Open with entries: {error}");
+    }
+}
+
+#[cfg(all(windows, not(debug_assertions)))]
+fn register_file_associations_inner() -> std::io::Result<()> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let exe = std::env::current_exe()?;
+    let exe_path = exe.to_string_lossy().to_string();
+    let exe_name = exe
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "vgallery.exe".to_string());
+    let command = format!("\"{exe_path}\" \"%1\"");
+    let icon = format!("\"{exe_path}\",0");
+
+    let classes = RegKey::predef(HKEY_CURRENT_USER).create_subkey("Software\\Classes")?.0;
+
+    // 1. The Applications entry Explorer lists in "Choose another app".
+    let (app_key, _) = classes.create_subkey(format!("Applications\\{exe_name}"))?;
+    app_key.set_value("FriendlyAppName", &"VGallery")?;
+    app_key.set_value("ApplicationCompany", &"M Junaid")?;
+    let (app_icon, _) = app_key.create_subkey("DefaultIcon")?;
+    app_icon.set_value("", &icon)?;
+    let (app_command, _) = app_key.create_subkey("shell\\open\\command")?;
+    app_command.set_value("", &command)?;
+    let (supported, _) = app_key.create_subkey("SupportedTypes")?;
+
+    // 2. A ProgID, the older but still necessary half of the same story.
+    let (prog_id, _) = classes.create_subkey("VGallery.Media")?;
+    prog_id.set_value("", &"VGallery photo or video")?;
+    prog_id.set_value("FriendlyTypeName", &"VGallery")?;
+    let (prog_icon, _) = prog_id.create_subkey("DefaultIcon")?;
+    prog_icon.set_value("", &icon)?;
+    let (prog_command, _) = prog_id.create_subkey("shell\\open\\command")?;
+    prog_command.set_value("", &command)?;
+
+    for ext in IMAGE_EXTS.iter().chain(VIDEO_EXTS.iter()).chain(MOTION_EXTS.iter()) {
+        let dotted = format!(".{ext}");
+        supported.create_subkey(&dotted)?;
+        let (ext_key, _) = classes.create_subkey(&dotted)?;
+        let (open_with, _) = ext_key.create_subkey("OpenWithProgids")?;
+        open_with.set_value("VGallery.Media", &"")?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
 
@@ -887,12 +1060,34 @@ pub struct AppState {
     trash_lock: Arc<Mutex<()>>,
 }
 
+#[derive(Default)]
+pub struct LaunchState {
+    file: Mutex<Option<String>>,
+}
+
 #[tauri::command]
 async fn scan_library(app: AppHandle) -> Result<Library, String> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || scan_blocking(&handle))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn scan_folder(path: String) -> Result<FolderScan, String> {
+    tauri::async_runtime::spawn_blocking(move || scan_folder_blocking(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The file this launch was asked to open, if any. Cleared after the first read.
+#[tauri::command]
+fn take_launch_file(state: State<'_, LaunchState>) -> Option<String> {
+    state
+        .file
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take())
 }
 
 #[tauri::command]
@@ -1073,11 +1268,36 @@ fn app_info(app: AppHandle) -> AppInfo {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let launch_file = first_media_arg(std::env::args().skip(1).collect::<Vec<_>>().iter());
+
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // A second launch (e.g. "Open with" while running) hands its path
+            // to the window that is already open.
+            if let Some(path) = first_media_arg(argv.iter()) {
+                let _ = app.emit("vgallery:open-file", path);
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_dialog::init());
+
+    builder
         .manage(AppState::default())
+        .manage(LaunchState {
+            file: Mutex::new(launch_file),
+        })
+        .setup(|_app| {
+            #[cfg(not(debug_assertions))]
+            register_file_associations();
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             scan_library,
+            scan_folder,
+            take_launch_file,
             get_roots,
             add_root,
             remove_root,

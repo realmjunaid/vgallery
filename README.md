@@ -92,7 +92,8 @@ an accent and pure-black AMOLED option. The full-screen feed is black in every t
 The player also handles **subtitles and extra audio tracks** from sidecar files next to the video
 (`movie.bn.srt`, `movie.en.forced.srt`, `movie.bn.m4a`) — with a track picker, per-video memory, and
 `T` / `C` shortcuts. The feed scrolls smoothly with the wheel instead of jumping a screen per notch,
-and it uses the same logo as the Android app.
+and it uses the same logo as the Android app. Once you run the Windows build, Explorer's
+**Open with** menu lists VGallery for photos and videos too.
 
 ```powershell
 cd windows

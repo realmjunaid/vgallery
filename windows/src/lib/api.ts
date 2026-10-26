@@ -28,6 +28,13 @@ export interface Library {
   scannedAt: number;
 }
 
+/** A single folder read on demand, e.g. when Explorer opens a file. */
+export interface FolderScan {
+  name: string;
+  path: string;
+  items: MediaItem[];
+}
+
 export interface TrashEntry {
   id: string;
   original: string;
@@ -78,6 +85,12 @@ export function assetUrl(path: string): string {
 }
 
 export const scanLibrary = (): Promise<Library> => invoke<Library>("scan_library");
+/** Read just the folder containing `path` (used by Explorer "Open with"). */
+export const scanFolder = (path: string): Promise<FolderScan> =>
+  invoke<FolderScan>("scan_folder", { path });
+/** The media file this launch was asked to open, if any (one-shot). */
+export const takeLaunchFile = (): Promise<string | null> =>
+  invoke<string | null>("take_launch_file");
 export const getRoots = (): Promise<string[]> => invoke<string[]>("get_roots");
 export const addRoot = (path: string): Promise<string[]> => invoke<string[]>("add_root", { path });
 export const removeRoot = (path: string): Promise<string[]> => invoke<string[]>("remove_root", { path });

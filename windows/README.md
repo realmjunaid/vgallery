@@ -38,6 +38,9 @@ plain `std::fs`, and the UI is vanilla TypeScript — no React, no UI framework 
   gather under **WhatsApp**, *Camera* with *Camera Roll*, `100ANDRO` with `101ANDRO`.
   Matching ignores case, accents, spacing, plurals and numbering.
 - **Multi-select** — tick items, then `Select all`, copy paths, see details, or delete.
+- **Open with VGallery** — after the first release launch, Explorer's *Open with* menu
+  lists VGallery for 22 photo and video formats; the clicked file opens straight in the
+  feed, and a second launch reuses the open window.
 - **Subtitles & extra audio tracks** — the captions button in the feed (or `T`) lists
   every `.srt`/`.vtt` and `.m4a`/`.mp3`/… sitting next to the video, remembers your pick
   per file, and switches with `C`. See [Subtitles & audio tracks](#subtitles--audio-tracks).
@@ -77,6 +80,25 @@ listed before unnamed ones, and the last choice for each video is remembered.
   video has no sidecars.
 
 A subtitle can also be cycled without the sheet with `C`; `T` opens the track picker.
+
+## Open with VGallery (Explorer)
+
+On every launch of a **release** build the app registers itself for photos and videos
+(22 extensions) in the current user's registry, so Explorer's **Open with** menu lists
+**VGallery** for a `.jpg`, `.png`, `.mp4`, `.mkv` and the rest — no admin rights required.
+
+- It writes only per-user keys: `HKCU\Software\Classes\Applications\vgallery.exe`,
+  `HKCU\Software\Classes\VGallery.Media`, and `…\OpenWithProgids` for each extension.
+  It never changes your default app; pick *Set default* in Windows if you want that too.
+- Double-clicking a file with *Open with › VGallery* opens its folder in the feed, starting
+  at that file. Files do not have to be inside a library folder.
+- If VGallery is already running, the path is forwarded to the open window instead of
+  starting a second copy (single-instance plugin).
+- The registered command points at the `.exe` you ran. Start the installed copy once after
+  installing or moving it, and the entry follows. Uninstalling leaves those per-user keys
+  behind — delete `HKCU\Software\Classes\VGallery.Media`, the
+  `Applications\vgallery.exe` key and the `…\OpenWithProgids\VGallery.Media` values to
+  remove the stale entry.
 
 ## Build from source
 
@@ -125,7 +147,7 @@ windows/
 └─ src-tauri/
    ├─ Cargo.toml
    ├─ tauri.conf.json
-   └─ src/lib.rs           # scan, thumbnails, trash, sidecar tracks, shell helpers
+   └─ src/lib.rs           # scan, thumbnails, trash, sidecar tracks, Explorer registration
 ```
 
 ## Where your data lives

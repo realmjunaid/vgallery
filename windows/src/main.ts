@@ -1,5 +1,6 @@
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import {
   addRoot,
   appInfo,
@@ -8,7 +9,9 @@ import {
   openExternal,
   removeRoot,
   revealInExplorer,
+  scanFolder,
   scanLibrary,
+  takeLaunchFile,
   trashItems,
   type AppInfo,
   type FolderEntry,
@@ -957,6 +960,34 @@ function openViewer(items: MediaItem[], startIndex: number, title: string): void
   });
 }
 
+/**
+ * Open a file handed to us by Explorer. We read its folder on demand, so the
+ * file does not have to be inside one of the library roots.
+ */
+async function openFromOs(path: string): Promise<void> {
+  try {
+    const scan = await scanFolder(path);
+    if (scan.items.length === 0) {
+      toast("That file is not a photo or video VGallery can show.", "error");
+      return;
+    }
+    const items = sortItems(scan.items, "name");
+    const wanted = path.toLowerCase();
+    const index = Math.max(
+      0,
+      items.findIndex((item) => item.path.toLowerCase() === wanted),
+    );
+    if (feedHandle) {
+      feedHandle.destroy();
+      feedHandle = null;
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+    openViewer(items, index, scan.name);
+  } catch (error) {
+    toast(String(error), "error");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Settings & Trash
 // ---------------------------------------------------------------------------
@@ -1058,10 +1089,20 @@ async function boot(): Promise<void> {
     if (settings.theme === "system") applySettings(settings);
   });
 
+  // A second launch ("Open with" while we are running) forwards its file here.
+  await listen<string>("vgallery:open-file", (event) => {
+    void openFromOs(event.payload);
+  }).catch(() => {
+    /* not running under Tauri: nothing to listen to */
+  });
+
   render();
   info = await appInfo().catch(() => null);
   await refreshLibrary();
   render();
+
+  const launchFile = await takeLaunchFile().catch(() => null);
+  if (launchFile) await openFromOs(launchFile);
 }
 
 void boot();
